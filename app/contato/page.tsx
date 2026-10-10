@@ -1,0 +1,5 @@
+import { Mail, MessageCircle } from "lucide-react";
+
+export const metadata = { title: "Contato", description: "Entre em contato com o time do PDF Master Pro." };
+
+export default function ContactPage() { return <div className="page-shell"><div className="page-header"><span className="eyebrow"><span className="eyebrow-dot" /> Estamos por perto</span><h1>Conte onde o documento travou.</h1><p>Envie uma mensagem com a ferramenta usada e o tipo de erro. Nunca inclua conteúdo confidencial do seu documento.</p></div><div className="feature-band" style={{ maxWidth: 800, marginTop: 34 }}><div className="feature-card"><Mail size={22} /><h3>E-mail</h3><p><a className="text-link" href="mailto:suporte@pdfmasterpro.app">suporte@pdfmasterpro.app</a></p></div><div className="feature-card"><MessageCircle size={22} /><h3>Antes de escrever</h3><p>Confira o limite de 25 MB e se a ferramenta exige um motor externo configurado.</p></div><div className="feature-card"><span className="eyebrow">LGPD</span><h3>Privacidade</h3><p>Não envie senhas, documentos de clientes ou informações pessoais no e-mail.</p></div></div></div>; }
