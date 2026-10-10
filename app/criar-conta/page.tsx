@@ -1,5 +1,17 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { GoogleSignInButton } from "@/components/google-sign-in-button";
 import { UserRoundPlus, ShieldCheck } from "lucide-react";
 export const metadata: Metadata = { title: "Criar conta", description: "Crie sua conta PDF Master Pro." };
-export default function SignUpPage() { return <div className="page-shell"><div className="empty-panel auth-panel"><div className="tool-card-icon" style={{ margin: "0 auto" }}><UserRoundPlus size={22} /></div><h1>Criar sua conta</h1><p>O primeiro acesso com sua conta Manus cria automaticamente seu perfil no PDF Master Pro, sem senha separada para guardar.</p><a className="button button-primary" href="/api/auth/login?mode=signup">Criar conta com Manus</a><div className="auth-note"><ShieldCheck size={16} /><span>Você poderá excluir seu perfil e seus metadados pelo suporte da aplicação.</span></div><p className="auth-switch">Já tem conta? <Link href="/entrar">Entrar</Link></p></div></div>; }
+const authErrors: Record<string, string> = {
+	google_not_configured: "O cadastro com Google ainda não foi configurado.",
+	google_csrf_failed: "Não foi possível validar esta tentativa. Inicie novamente.",
+	google_email_unverified: "Use uma conta Google com endereço de e-mail verificado.",
+	google_auth_failed: "Não foi possível concluir o cadastro com Google. Tente novamente.",
+};
+export default async function SignUpPage({ searchParams }: { searchParams: Promise<{ authError?: string }> }) {
+	const { authError } = await searchParams;
+	const errorMessage = authError ? authErrors[authError] : undefined;
+	const manusConfigured = Boolean(process.env.MANUS_PROJECT_ID && process.env.MANUS_OAUTH_PORTAL_URL && process.env.MANUS_OAUTH_API_URL);
+	return <div className="page-shell"><div className="empty-panel auth-panel"><div className="tool-card-icon" style={{ margin: "0 auto" }}><UserRoundPlus size={22} /></div><h1>Criar sua conta</h1><p>Use sua conta Google (Gmail) para criar seu perfil. Não é necessário definir outra senha.</p>{errorMessage && <p role="alert" style={{ color: "#b42318" }}>{errorMessage}</p>}<GoogleSignInButton mode="signup" /><div className="auth-note"><ShieldCheck size={16} /><span>O Google confirma sua identidade; sua senha não é compartilhada com o PDF Master Pro.</span></div>{manusConfigured && <p className="auth-switch"><a href="/api/auth/login?mode=signup">Usar conta Manus</a></p>}<p className="auth-switch">Já tem conta? <Link href="/entrar">Entrar</Link></p></div></div>;
+}
