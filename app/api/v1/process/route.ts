@@ -7,6 +7,7 @@ import { type FileKind, FREE_MAX_FILES, validateFile, safeFilename } from "@/lib
 import { attachSessionCookie, createProcessingTask, getSessionContext, markProcessingTaskCompleted, markProcessingTaskFailed } from "@/lib/db/tasks";
 
 export const runtime = "nodejs";
+export const maxDuration = 300;
 const MAX_REQUEST_BYTES = 130 * 1024 * 1024;
 const angleSchema = z.coerce.number().int().refine((value) => [90, 180, 270].includes(value), "O ângulo deve ser 90, 180 ou 270 graus.");
 const pageSchema = z.coerce.number().int().min(1, "A página deve ser um número inteiro positivo.");
@@ -19,6 +20,24 @@ function numberField(form: FormData, key: string, fallback: number) { const valu
 
 export async function POST(request: NextRequest) {
   const tool = request.nextUrl.searchParams.get("tool"); if (!tool) return errorResponse("Selecione uma ferramenta de processamento.");
+  const workerUrl = process.env.PROCESSING_WORKER_URL?.trim();
+  if (workerUrl) {
+    try {
+      const target = `${workerUrl.replace(/\/$/, "")}/api/v1/process${request.nextUrl.search}`;
+      const response = await fetch(target, {
+        method: "POST",
+        headers: request.headers,
+        body: request.body,
+        duplex: "half",
+      } as RequestInit);
+      const headers = new Headers(response.headers);
+      headers.delete("transfer-encoding");
+      return new NextResponse(response.body, { status: response.status, headers });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao contatar o worker de processamento.";
+      return errorResponse(`Não foi possível encaminhar a tarefa: ${message}`, 503);
+    }
+  }
   const declaredLength = Number(request.headers.get("content-length") || 0); if (declaredLength > MAX_REQUEST_BYTES) return errorResponse("A tarefa excede o limite de upload desta versão. Use arquivos menores ou menos arquivos.", 413);
   let form: FormData; try { form = await request.formData(); } catch { return errorResponse("Não foi possível receber os arquivos. Tente novamente.", 400); }
   const entries = form.getAll("files").filter((value): value is File => typeof value !== "string" && value instanceof File); if (!entries.length) return errorResponse("Envie pelo menos um arquivo."); if (entries.length > FREE_MAX_FILES) return errorResponse("O plano grátis permite até 5 arquivos por tarefa.");
