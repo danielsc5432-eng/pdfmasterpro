@@ -1,11 +1,9 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
-import JSZip from "jszip";
-import { Document, FrameAnchorType, FrameWrap, ImageRun, PageOrientation, Packer, Paragraph, TabStopType, TextRun } from "docx";
+import { Document, FrameAnchorType, FrameWrap, ImageRun, LineRuleType, PageOrientation, Packer, Paragraph, TabStopType, TextRun } from "docx";
 import { parseLayout, type LayoutImageItem, type LayoutPage, type LayoutTextItem } from "./layout";
-import { fitDocxToPdfPage, pdfToDocxWithMsWord } from "./msword";
+import { pdfToDocxWithMsWord } from "./msword";
 import { commandExists, execFile } from "./system";
 
 export type DocxParagraph = { text: string; pageBreakBefore: boolean; heading: boolean };
@@ -53,16 +51,43 @@ function twips(points: number) {
   return Math.max(0, Math.round(points * POINTS_TO_TWIPS));
 }
 
-function frameAt(x: number, y: number) {
+function frameAt(x: number, y: number, width?: number) {
   return {
     type: "absolute" as const,
     position: { x: twips(x), y: twips(y) },
     anchor: { horizontal: FrameAnchorType.PAGE, vertical: FrameAnchorType.PAGE },
     wrap: FrameWrap.NONE,
+    ...(width !== undefined ? { width } : {}),
   };
 }
 
-function textParagraph(item: LayoutTextItem) {
+/**
+ * Agrupa linhas consecutivas que formam um mesmo parágrafo: mesma coluna (x próximo),
+ * mesmo corpo tipográfico e intervalo vertical compatível com quebra de linha.
+ * O DOCX resultante flui como parágrafo natural em vez de quadros soltos por linha.
+ */
+function groupLines(items: LayoutTextItem[]): LayoutTextItem[][] {
+  if (items.length <= 1) return items.map((item) => [item]);
+  const sorted = [...items].sort((a, b) => a.y - b.y || a.x - b.x);
+  const groups: LayoutTextItem[][] = [];
+  let current: LayoutTextItem[] = [sorted[0]];
+  for (let index = 1; index < sorted.length; index++) {
+    const previous = current[current.length - 1];
+    const item = sorted[index];
+    const lineHeight = Math.max(previous.font.size, item.font.size) * 1.5;
+    const gap = item.y - (previous.y + previous.height);
+    const sameColumn = Math.abs(item.x - previous.x) <= Math.max(5, previous.font.size * 0.5);
+    const sameFont = Math.abs(item.font.size - previous.font.size) < 0.5;
+    const consecutive = gap >= -1 && gap < lineHeight;
+    if (sameColumn && sameFont && consecutive) current.push(item);
+    else { groups.push(current); current = [item]; }
+  }
+  groups.push(current);
+  return groups;
+}
+
+function textParagraph(items: LayoutTextItem[], pageWidth: number) {
+  const item = items[0];
   const color = item.font.color.replace("#", "").toUpperCase();
   const size = Math.max(2, Math.round(item.font.size * 2));
   const regular = /^[0-9A-F]{6}$/.test(color) ? color : "000000";
@@ -72,21 +97,39 @@ function textParagraph(item: LayoutTextItem) {
     const previous = item.words[index - 1];
     return word.x - (previous.x + previous.width) > threshold && word.x - item.words[0].x > 0;
   });
-  const positioned = item.words.length > 1 && hasWideGap;
+  const positioned = item.words.length > 1 && hasWideGap && items.length === 1;
 
-  const run = (text: string, bold: boolean, italic: boolean) => new TextRun({
+  const run = (text: string, bold: boolean, italic: boolean, font = item.font) => new TextRun({
     text,
-    font: item.font.family,
-    size,
-    bold: bold || item.font.bold,
-    italics: italic || item.font.italic,
-    color: regular,
+    font: font.family,
+    size: Math.max(2, Math.round(font.size * 2)),
+    bold: bold || font.bold,
+    italics: italic || font.italic,
+    color: (() => { const c = font.color.replace("#", "").toUpperCase(); return /^[0-9A-F]{6}$/.test(c) ? c : "000000"; })(),
   });
 
   const tabStops: { type: (typeof TabStopType)[keyof typeof TabStopType]; position: number }[] = [];
   const children: TextRun[] = [];
 
-  if (positioned) {
+  if (items.length > 1) {
+    // Parágrafo multi-linha: renderiza cada linha com quebra, preservando fonte/cor por linha.
+    items.forEach((line, lineIndex) => {
+      if (lineIndex > 0) children.push(new TextRun({ break: 1, text: "" }));
+      const lineColor = line.font.color.replace("#", "").toUpperCase();
+      const lineRegular = /^[0-9A-F]{6}$/.test(lineColor) ? lineColor : "000000";
+      const lineRun = (text: string, bold: boolean, italic: boolean) => new TextRun({
+        text,
+        font: line.font.family,
+        size: Math.max(2, Math.round(line.font.size * 2)),
+        bold: bold || line.font.bold,
+        italics: italic || line.font.italic,
+        color: lineRegular,
+      });
+      for (const segment of line.segments.filter((segment) => segment.text)) {
+        children.push(lineRun(segment.text, segment.bold, segment.italic));
+      }
+    });
+  } else if (positioned) {
     item.words.forEach((word, index) => {
       if (index > 0) {
         const previous = item.words[index - 1];
@@ -107,9 +150,21 @@ function textParagraph(item: LayoutTextItem) {
     }
   }
 
+  // Largura explícita até a borda da página: impede que o Word quebre o texto dentro do quadro.
+  const frameWidth = twips(Math.max(item.width + 20, pageWidth - item.x));
+  // Espaçamento entre linhas real do PDF (multi-linha) ou aproximado por corpo (linha única).
+  const spacing = items.length > 1
+    ? (() => {
+        const first = items[0];
+        const second = items[1];
+        const exactTwips = Math.max(40, twips(second.y - first.y));
+        return { before: 0, after: 0, line: exactTwips, lineRule: LineRuleType.EXACT };
+      })()
+    : { before: 0, after: 0, line: Math.max(120, Math.round(item.font.size * 22)) };
+
   return new Paragraph({
-    frame: frameAt(item.x, item.y),
-    spacing: { before: 0, after: 0, line: Math.max(120, Math.round(item.font.size * 22)) },
+    frame: frameAt(item.x, item.y, frameWidth),
+    spacing,
     tabStops: tabStops.length ? tabStops : undefined,
     children,
   });
@@ -133,9 +188,9 @@ function imageParagraph(item: LayoutImageItem, data: Uint8Array) {
 function layoutSections(pages: LayoutPage[], assets: Map<string, Uint8Array>) {
   return pages.map((page) => {
     const children: Paragraph[] = [];
-    for (const item of page.texts) {
-      if (!item.segments.some((segment) => segment.text.trim())) continue;
-      children.push(textParagraph(item));
+    const textItems = page.texts.filter((item) => item.segments.some((segment) => segment.text.trim()));
+    for (const group of groupLines(textItems)) {
+      children.push(textParagraph(group, page.width));
     }
     for (const item of page.images) {
       const data = assets.get(item.source);
@@ -185,56 +240,11 @@ async function readPageImages(directory: string, prefix: string, inputPath: stri
   }
 }
 
-/**
- * Converte PDF em DOCX usando o LibreOffice (abre o PDF via Draw e exporta para Writer DOCX).
- * Devolve null quando indisponível ou quando a conversão produz um arquivo sem conteúdo.
- */
-async function pdfToDocxWithLibreOffice(input: Uint8Array): Promise<Uint8Array | null> {
-  const converter = process.env.SOFFICE_CONVERTER || "soffice";
-  if (!(await commandExists(converter))) return null;
-  const directory = await mkdtemp(path.join(os.tmpdir(), "pdfmaster-lo-"));
-  try {
-    const inputPath = path.join(directory, "input.pdf");
-    const outputPath = path.join(directory, "input.docx");
-    const profile = path.join(directory, "profile");
-    await writeFile(inputPath, input);
-    await execFile(
-      converter,
-      [
-        `-env:UserInstallation=${pathToFileURL(profile).href}`,
-        "--headless",
-        "--convert-to", "docx",
-        "--outdir", directory,
-        inputPath,
-      ],
-      { timeout: 180000, maxBuffer: 96 * 1024 * 1024 },
-    );
-    const bytes = await readFile(outputPath);
-    if (bytes.length < 200) return null;
-    const output = new Uint8Array(bytes);
-    // Valida que o DOCX contém texto real (protege contra conversões Draw vazias).
-    const zip = await JSZip.loadAsync(output).catch(() => null);
-    const documentXml = zip?.file("word/document.xml");
-    if (!documentXml) return null;
-    const xml = await documentXml.async("string");
-    if (!/<w:t[^>]*>[^<]+<\/w:t>/.test(xml)) return null;
-    // Corrige tamanhos de página para casar com o PDF original (LibreOffice pode normalizar para A4/Letter).
-    return await fitDocxToPdfPage(output, input);
-  } catch {
-    return null;
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
-}
-
 export async function pdfToDocx(input: Uint8Array, originalName = "documento") {
   // Motor principal: Microsoft Word (abre o PDF e salva em DOCX preservando o layout nativamente).
   const viaWord = await pdfToDocxWithMsWord(input);
   if (viaWord) return viaWord;
-  // Segundo motor: LibreOffice (parser PDF nativo via Draw, exporta para Writer DOCX).
-  const viaLibreOffice = await pdfToDocxWithLibreOffice(input);
-  if (viaLibreOffice) return viaLibreOffice;
-  // Reserva: reconstrução manual a partir do layout extraído por pdftotext/pdtohtml.
+  // Reserva: reconstrução posicional a partir do layout extraído por pdftotext/pdtohtml.
   const extractor = process.env.PDF_TEXT_EXTRACTOR || "pdftotext";
   const htmlConverter = process.env.PDF_HTML_CONVERTER || "pdftohtml";
   if (!(await commandExists(extractor))) throw new Error("O extrator de texto PDF não está configurado neste servidor.");
