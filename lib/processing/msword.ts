@@ -201,7 +201,7 @@ async function readPdfPageSizesInTwips(input: Uint8Array): Promise<{ width: numb
  * diferentes) e zera a margem inferior, que não ancora conteúdo e só limita onde o Word quebra a
  * página — preservando a âncora visual do texto (topo/laterais intactos) e a contagem de páginas.
  */
-async function fitDocxToPdfPage(docx: Uint8Array, pdf: Uint8Array): Promise<Uint8Array> {
+export async function fitDocxToPdfPage(docx: Uint8Array, pdf: Uint8Array): Promise<Uint8Array> {
   const sizes = await readPdfPageSizesInTwips(pdf);
   if (!sizes?.length) return docx;
   const zip = await JSZip.loadAsync(docx).catch(() => null);

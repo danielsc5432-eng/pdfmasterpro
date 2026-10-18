@@ -1,9 +1,11 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
+import JSZip from "jszip";
 import { Document, FrameAnchorType, FrameWrap, ImageRun, PageOrientation, Packer, Paragraph, TabStopType, TextRun } from "docx";
 import { parseLayout, type LayoutImageItem, type LayoutPage, type LayoutTextItem } from "./layout";
-import { pdfToDocxWithMsWord } from "./msword";
+import { fitDocxToPdfPage, pdfToDocxWithMsWord } from "./msword";
 import { commandExists, execFile } from "./system";
 
 export type DocxParagraph = { text: string; pageBreakBefore: boolean; heading: boolean };
@@ -183,10 +185,56 @@ async function readPageImages(directory: string, prefix: string, inputPath: stri
   }
 }
 
+/**
+ * Converte PDF em DOCX usando o LibreOffice (abre o PDF via Draw e exporta para Writer DOCX).
+ * Devolve null quando indisponível ou quando a conversão produz um arquivo sem conteúdo.
+ */
+async function pdfToDocxWithLibreOffice(input: Uint8Array): Promise<Uint8Array | null> {
+  const converter = process.env.SOFFICE_CONVERTER || "soffice";
+  if (!(await commandExists(converter))) return null;
+  const directory = await mkdtemp(path.join(os.tmpdir(), "pdfmaster-lo-"));
+  try {
+    const inputPath = path.join(directory, "input.pdf");
+    const outputPath = path.join(directory, "input.docx");
+    const profile = path.join(directory, "profile");
+    await writeFile(inputPath, input);
+    await execFile(
+      converter,
+      [
+        `-env:UserInstallation=${pathToFileURL(profile).href}`,
+        "--headless",
+        "--convert-to", "docx",
+        "--outdir", directory,
+        inputPath,
+      ],
+      { timeout: 180000, maxBuffer: 96 * 1024 * 1024 },
+    );
+    const bytes = await readFile(outputPath);
+    if (bytes.length < 200) return null;
+    const output = new Uint8Array(bytes);
+    // Valida que o DOCX contém texto real (protege contra conversões Draw vazias).
+    const zip = await JSZip.loadAsync(output).catch(() => null);
+    const documentXml = zip?.file("word/document.xml");
+    if (!documentXml) return null;
+    const xml = await documentXml.async("string");
+    if (!/<w:t[^>]*>[^<]+<\/w:t>/.test(xml)) return null;
+    // Corrige tamanhos de página para casar com o PDF original (LibreOffice pode normalizar para A4/Letter).
+    return await fitDocxToPdfPage(output, input);
+  } catch {
+    return null;
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
 export async function pdfToDocx(input: Uint8Array, originalName = "documento") {
   // Motor principal: Microsoft Word (abre o PDF e salva em DOCX preservando o layout nativamente).
   const viaWord = await pdfToDocxWithMsWord(input);
   if (viaWord) return viaWord;
+  // Segundo motor: LibreOffice (parser PDF nativo via Draw, exporta para Writer DOCX).
+  const viaLibreOffice = await pdfToDocxWithLibreOffice(input);
+  if (viaLibreOffice) return viaLibreOffice;
+  // Reserva: reconstrução manual a partir do layout extraído por pdftotext/pdtohtml.
   const extractor = process.env.PDF_TEXT_EXTRACTOR || "pdftotext";
   const htmlConverter = process.env.PDF_HTML_CONVERTER || "pdftohtml";
   if (!(await commandExists(extractor))) throw new Error("O extrator de texto PDF não está configurado neste servidor.");
