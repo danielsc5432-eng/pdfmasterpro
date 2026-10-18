@@ -6,7 +6,7 @@ O container instala dependências com `pnpm-lock.yaml`, executa `pnpm build` e s
 
 ## Dependências nativas
 
-A imagem de produção instala Poppler (`pdftotext`, `pdftoppm`), Ghostscript (`gs`, compressão), qpdf (proteção/verificação), Tesseract e `tesseract-ocr-por` (OCR), Python/Pillow (redação rasterizada) e LibreOffice Writer (Word→PDF). Fixe versões, revise licenças, limite CPU/memória/tempo e execute conversores em workers isolados antes de uma operação de produção em escala.
+A imagem de produção instala Poppler (`pdftotext`, `pdftoppm`), Ghostscript (`gs`, compressão), qpdf (proteção/verificação), Tesseract e `tesseract-ocr-por` (OCR) e LibreOffice Writer (reserva do Word→PDF). Em Windows com Microsoft Word instalado, defina `PDF_TO_WORD_CONVERTER=msword` e `WORD_CONVERTER=msword` para usar o Word como motor das conversões Word↔PDF (automação COM; exige PowerShell e permissão para iniciar processos); sem Word (por exemplo, no contêiner Linux) os motores caem automaticamente na reserva (`rebuild` para PDF→DOCX e LibreOffice para DOCX→PDF). A redação rasterizada é feita em Node com `pngjs`, sem dependência de Python. Fixe versões, revise licenças, limite CPU/memória/tempo e execute conversores em workers isolados antes de uma operação de produção em escala.
 
 ## Variáveis
 

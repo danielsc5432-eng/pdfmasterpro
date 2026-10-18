@@ -7,11 +7,14 @@ Plataforma web em pt-BR para tarefas reais de PDF, conversões e segurança docu
 ```bash
 corepack enable
 pnpm install
-pnpm db:migrate
 pnpm dev
 ```
 
 A aplicação abre em `http://localhost:3000`. O build de produção é validado com `pnpm test && pnpm typecheck && pnpm build`.
+
+O comando `pnpm db:migrate` (que exige `DATABASE_URL`) é opcional: sem banco configurado todas as ferramentas processam normalmente e apenas o histórico por sessão fica indisponível.
+
+Para conferir as ferramentas de ponta a ponta contra o servidor em execução, use `pnpm exec tsx scripts/smoke-tools.ts`.
 
 ## Ferramentas funcionais
 
@@ -25,7 +28,7 @@ O modo convidado/grátis limita cada arquivo a 25 MB e cada tarefa a 5 arquivos.
 
 ## Ambiente nativo
 
-A imagem de produção instala Poppler, Ghostscript, qpdf, Tesseract com português, Python/Pillow e LibreOffice Writer. `DATABASE_URL` é usado pelo banco gerenciado; aplique schema com `pnpm db:migrate`. Não coloque segredos no navegador.
+A imagem de produção instala Poppler, Ghostscript, qpdf, Tesseract com português e LibreOffice Writer. Em execução nativa, os motores podem ser apontados por variável de ambiente (`PDF_RENDERER`, `PDF_COMPRESSOR`, `PDF_TEXT_EXTRACTOR`, `OCR_ENGINE`, `PDF_PROTECTOR`, `PDF_TO_WORD_CONVERTER`, `WORD_CONVERTER`, `SOFFICE_CONVERTER` e `TESSDATA_PREFIX`), aceitando tanto o nome do comando quanto o caminho absoluto do binário. Nas conversões Word↔PDF, `msword` usa o Microsoft Word instalado (padrão quando disponível, com queda automática para a reserva); `PDF_TO_WORD_CONVERTER=rebuild` força a reconstrução de layout e um caminho em `WORD_CONVERTER`/`SOFFICE_CONVERTER` aponta o LibreOffice. `DATABASE_URL` é usado pelo banco gerenciado; aplique schema com `pnpm db:migrate`. Não coloque segredos no navegador.
 
 ## Próximas fases
 
