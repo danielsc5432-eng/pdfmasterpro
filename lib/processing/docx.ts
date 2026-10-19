@@ -63,43 +63,16 @@ function frameAt(x: number, y: number, width?: number) {
   };
 }
 
-/**
- * Agrupa linhas consecutivas que formam um mesmo parágrafo: mesma coluna (x próximo),
- * mesmo corpo tipográfico e intervalo vertical compatível com quebra de linha.
- * O DOCX resultante flui como parágrafo natural em vez de quadros soltos por linha.
- */
-function groupLines(items: LayoutTextItem[]): LayoutTextItem[][] {
-  if (items.length <= 1) return items.map((item) => [item]);
-  const sorted = [...items].sort((a, b) => a.y - b.y || a.x - b.x);
-  const groups: LayoutTextItem[][] = [];
-  let current: LayoutTextItem[] = [sorted[0]];
-  for (let index = 1; index < sorted.length; index++) {
-    const previous = current[current.length - 1];
-    const item = sorted[index];
-    const lineHeight = Math.max(previous.font.size, item.font.size) * 1.5;
-    const gap = item.y - (previous.y + previous.height);
-    const sameColumn = Math.abs(item.x - previous.x) <= Math.max(5, previous.font.size * 0.5);
-    const sameFont = Math.abs(item.font.size - previous.font.size) < 0.5;
-    const consecutive = gap >= -1 && gap < lineHeight;
-    if (sameColumn && sameFont && consecutive) current.push(item);
-    else { groups.push(current); current = [item]; }
-  }
-  groups.push(current);
-  return groups;
-}
+
 
 function textParagraph(items: LayoutTextItem[], pageWidth: number) {
   const item = items[0];
   const color = item.font.color.replace("#", "").toUpperCase();
   const size = Math.max(2, Math.round(item.font.size * 2));
   const regular = /^[0-9A-F]{6}$/.test(color) ? color : "000000";
-  const threshold = item.font.size * 0.45;
-  const hasWideGap = item.words.some((word, index) => {
-    if (!index) return false;
-    const previous = item.words[index - 1];
-    return word.x - (previous.x + previous.width) > threshold && word.x - item.words[0].x > 0;
-  });
-  const positioned = item.words.length > 1 && hasWideGap && items.length === 1;
+  // Posiciona palavra a palavra com tabulações sempre que houver múltiplas
+  // palavras: garante o alinhamento horizontal exato do PDF (sem drift).
+  const positioned = item.words.length > 1 && items.length === 1;
 
   const run = (text: string, bold: boolean, italic: boolean, font = item.font) => new TextRun({
     text,
@@ -134,10 +107,9 @@ function textParagraph(items: LayoutTextItem[], pageWidth: number) {
   } else if (positioned) {
     item.words.forEach((word, index) => {
       if (index > 0) {
-        const previous = item.words[index - 1];
-        const gap = word.x - (previous.x + previous.width);
+        // Tabulação até a posição horizontal exata da palavra no PDF.
         const target = word.x - item.words[0].x;
-        if (gap > threshold && target > 0) {
+        if (target > 0.5) {
           tabStops.push({ type: TabStopType.LEFT, position: twips(target) });
           children.push(run("\t", false, false));
         } else {
@@ -154,7 +126,9 @@ function textParagraph(items: LayoutTextItem[], pageWidth: number) {
 
   // Largura explícita até a borda da página: impede que o Word quebre o texto dentro do quadro.
   const frameWidth = twips(Math.max(item.width + 20, pageWidth - item.x));
-  // Espaçamento entre linhas real do PDF (multi-linha) ou aproximado por corpo (linha única).
+  // Espaçamento entre linhas real do PDF (multi-linha) ou linha única com
+  // altura exata de 1,2× o corpo. A altura exata torna previsível onde o Word
+  // coloca a linha de base (ver `baselineShift` abaixo).
   const spacing = items.length > 1
     ? (() => {
         const first = items[0];
@@ -162,10 +136,17 @@ function textParagraph(items: LayoutTextItem[], pageWidth: number) {
         const exactTwips = Math.max(40, twips(second.y - first.y));
         return { before: 0, after: 0, line: exactTwips, lineRule: LineRuleType.EXACT };
       })()
-    : { before: 0, after: 0, line: Math.max(120, Math.round(item.font.size * 22)) };
+    : { before: 0, after: 0, line: Math.max(40, Math.round(item.font.size * 1.2 * 20)), lineRule: LineRuleType.EXACT };
+
+  // O topo do quadro é o topo da caixa de linha; o Word desenha o texto com a
+  // linha de base a ~1,2·corpo do topo (para a altura exata acima). Recuamos o
+  // quadro em 0,24·corpo para que a linha de base coincida exatamente com a do
+  // PDF — sem isso o texto fica alguns pontos abaixo (e o desvio variava com o
+  // corpo da fonte, quebrando o alinhamento).
+  const baselineShift = item.font.size * 0.24;
 
   return new Paragraph({
-    frame: frameAt(item.x, item.y, frameWidth),
+    frame: frameAt(item.x, item.y - baselineShift, frameWidth),
     spacing,
     tabStops: tabStops.length ? tabStops : undefined,
     children,
@@ -191,8 +172,12 @@ function layoutSections(pages: LayoutPage[], assets: Map<string, Uint8Array>) {
   return pages.map((page) => {
     const children: Paragraph[] = [];
     const textItems = page.texts.filter((item) => item.segments.some((segment) => segment.text.trim()));
-    for (const group of groupLines(textItems)) {
-      children.push(textParagraph(group, page.width));
+    // Fidelidade máxima: cada linha do PDF vira um quadro próprio, posicionado
+    // de forma exata. Não fundimos linhas em parágrafos, pois isso impede o
+    // posicionamento por tabulação e causa desvio horizontal acumulado.
+    const ordered = [...textItems].sort((a, b) => a.y - b.y || a.x - b.x);
+    for (const item of ordered) {
+      children.push(textParagraph([item], page.width));
     }
     for (const item of page.images) {
       const data = assets.get(item.source);

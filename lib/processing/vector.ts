@@ -252,7 +252,13 @@ export async function extractPdfVectors(input: Uint8Array): Promise<PdfVectorPag
 
 // ─── Geração de formas VML para DOCX ────────────────────────────────────────
 
-function vmlLine(line: PdfLine, id: number): string {
+// O espaço de coordenadas de `from`/`to` (e de `coordsize`) do VML é medido em
+// pixels de 96 dpi, enquanto as dimensões do `style` são em pontos. Sem esta
+// conversão o Word desenha cada forma com apenas 3/4 do tamanho real (os
+// traços ficavam truncados antes de cada borda vertical da tabela).
+const PT_TO_PX = 96 / 72;
+
+function vmlLine(line: PdfLine, id: string, offsetX: number, offsetY: number): string {
   const x1 = Math.min(line.x1, line.x2);
   const y1 = Math.min(line.y1, line.y2);
   const w = Math.abs(line.x2 - line.x1);
@@ -263,36 +269,44 @@ function vmlLine(line: PdfLine, id: number): string {
   const toY = line.y1 <= line.y2 ? h : 0;
   const weight = Math.max(0.25, line.width || 0.5);
   return (
-    `<v:line id="vln${id}" style="position:absolute;` +
-    `margin-left:${x1.toFixed(1)}pt;margin-top:${y1.toFixed(1)}pt;` +
+    `<v:line id="${id}" style="position:absolute;` +
+    `margin-left:${(x1 - offsetX).toFixed(1)}pt;margin-top:${(y1 - offsetY).toFixed(1)}pt;` +
     `width:${w.toFixed(1)}pt;height:${h.toFixed(1)}pt;z-index:251659264;` +
     `mso-position-horizontal-relative:page;mso-position-vertical-relative:page" ` +
-    `from="${fromX.toFixed(1)},${fromY.toFixed(1)}" to="${toX.toFixed(1)},${toY.toFixed(1)}" ` +
-    `strokecolor="${line.color}" strokeweight="${weight.toFixed(2)}pt"/>`
+    `from="${(fromX * PT_TO_PX).toFixed(1)},${(fromY * PT_TO_PX).toFixed(1)}" ` +
+    `to="${(toX * PT_TO_PX).toFixed(1)},${(toY * PT_TO_PX).toFixed(1)}" ` +
+    `strokecolor="${line.color}" strokeweight="${weight.toFixed(1)}pt"/>`
   );
 }
 
-function vmlRect(rect: PdfRect, id: number): string {
+function vmlRect(rect: PdfRect, id: string, offsetX: number, offsetY: number): string {
   const weight = Math.max(0.25, rect.strokeWidth || 0.5);
   const fillAttr = rect.filled && rect.fillColor ? `fillcolor="${rect.fillColor}"` : `fillcolor="none"`;
   return (
-    `<v:rect id="vrc${id}" style="position:absolute;` +
-    `margin-left:${rect.x.toFixed(1)}pt;margin-top:${rect.y.toFixed(1)}pt;` +
+    `<v:rect id="${id}" style="position:absolute;` +
+    `margin-left:${(rect.x - offsetX).toFixed(1)}pt;margin-top:${(rect.y - offsetY).toFixed(1)}pt;` +
     `width:${rect.w.toFixed(1)}pt;height:${rect.h.toFixed(1)}pt;z-index:251659264;` +
     `mso-position-horizontal-relative:page;mso-position-vertical-relative:page" ` +
     `strokecolor="${rect.strokeColor}" strokeweight="${weight.toFixed(2)}pt" ${fillAttr}/>`
   );
 }
 
-/** Gera um `<w:r><w:pict>` com formas VML (para injetar dentro de um parágrafo existente). */
-export function buildShapesRun(vp: PdfVectorPage): string {
+/**
+ * Gera os runs VML (linhas/retângulos) de uma página. Cada forma vai no seu
+ * próprio `<w:pict>`: o Word trata cada `w:pict` como um objeto independente;
+ * juntar tudo num único pict fazia o Word descartar/deslocar as formas.
+ */
+export function buildShapesRun(vp: PdfVectorPage, pageIndex = 0, offsetX = 0, offsetY = 0): string {
   const shapes: string[] = [];
   let id = 0;
-  for (const rect of vp.rects.filter((r) => r.filled)) shapes.push(vmlRect(rect, id++));
-  for (const rect of vp.rects.filter((r) => !r.filled)) shapes.push(vmlRect(rect, id++));
-  for (const line of vp.lines) shapes.push(vmlLine(line, id++));
+  const next = () => `vln${pageIndex}_${id++}`;
+  for (const rect of vp.rects.filter((r) => r.filled)) shapes.push(vmlRect(rect, next(), offsetX, offsetY));
+  for (const rect of vp.rects.filter((r) => !r.filled)) shapes.push(vmlRect(rect, next(), offsetX, offsetY));
+  for (const line of vp.lines) shapes.push(vmlLine(line, next(), offsetX, offsetY));
   if (!shapes.length) return "";
-  return `<w:r><w:rPr><w:noProof/></w:rPr><w:pict>${shapes.join("")}</w:pict></w:r>`;
+  return shapes
+    .map((shape) => `<w:r><w:rPr><w:noProof/></w:rPr><w:pict>${shape}</w:pict></w:r>`)
+    .join("");
 }
 
 /**
@@ -341,18 +355,20 @@ export function injectVectorShapes(documentXml: string, vectors: PdfVectorPage[]
     pos = sectionEnd;
   }
 
-  // Para cada seção, injeta o run VML no primeiro <w:r>...</w:r> encontrado.
+  // Para cada seção, injeta os runs VML no primeiro <w:r>...</w:r> encontrado.
   const result = sections
     .map((section, index) => {
       const vp = vectors[index];
       if (!vp || (!vp.lines.length && !vp.rects.length)) return section;
-      const shapesRun = buildShapesRun(vp);
-      if (!shapesRun) return section;
-      // Insere antes do primeiro <w:r> existente no parágrafo inicial da seção.
+      // As formas VML são posicionadas em relação ao parágrafo que as contém
+      // (o Word ignora mso-position-*-relative:page nesse caso). Como injetamos
+      // no primeiro parágrafo — que tem um frame posicionado — compensamos o
+      // deslocamento (x, y) do frame para que as formas caiam na posição exata.
       const firstRun = section.indexOf("<w:r>");
-      if (firstRun >= 0) {
-        return section.substring(0, firstRun) + shapesRun + section.substring(firstRun);
-      }
+      const { x: offsetX, y: offsetY } = firstRun >= 0 ? enclosingFrameOffset(section, firstRun) : { x: 0, y: 0 };
+      const shapesRun = buildShapesRun(vp, index, offsetX, offsetY);
+      if (!shapesRun) return section;
+      if (firstRun >= 0) return section.substring(0, firstRun) + shapesRun + section.substring(firstRun);
       // Sem <w:r>: cria um parágrafo mínimo com as formas.
       return (
         `<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="1" w:lineRule="exact"/></w:pPr>` +
@@ -362,4 +378,16 @@ export function injectVectorShapes(documentXml: string, vectors: PdfVectorPage[]
     .join("");
 
   return prefix + result + suffix;
+}
+
+/** Extrai o deslocamento (em pt) do frame do parágrafo que contém a posição dada. */
+function enclosingFrameOffset(section: string, position: number): { x: number; y: number } {
+  const paragraphStart = section.lastIndexOf("<w:p>", position);
+  const start = paragraphStart >= 0 ? paragraphStart : 0;
+  const scope = section.substring(start, position);
+  const frame = scope.match(/<w:framePr\b[^>]*>/);
+  if (!frame) return { x: 0, y: 0 };
+  const x = frame[0].match(/w:x="(-?\d+)"/);
+  const y = frame[0].match(/w:y="(-?\d+)"/);
+  return { x: x ? Number.parseInt(x[1], 10) / 20 : 0, y: y ? Number.parseInt(y[1], 10) / 20 : 0 };
 }

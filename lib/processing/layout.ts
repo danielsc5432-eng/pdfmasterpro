@@ -24,7 +24,7 @@ type BboxLine = { x: number; y: number; width: number; height: number; text: str
 
 type BboxPage = { width: number; height: number; lines: BboxLine[] };
 
-type HtmlRun = { fontId: string; left: number; segments: LayoutSegment[]; plain: string };
+type HtmlRun = { fontId: string; left: number; top: number; segments: LayoutSegment[]; plain: string };
 
 type HtmlPage = { fonts: Record<string, LayoutFont>; texts: HtmlRun[]; images: LayoutImageItem[] };
 
@@ -149,7 +149,7 @@ export function parsePdfToHtml(xml: string): HtmlPage[] {
       const attributes = parseAttributes(text[1]);
       const segments = parseSegments(text[2]);
       const plain = segments.map((segment) => segment.text).join("");
-      if (plain.trim()) texts.push({ fontId: attributes.font || "", left: toNumber(attributes.left), segments, plain });
+      if (plain.trim()) texts.push({ fontId: attributes.font || "", left: toNumber(attributes.left), top: toNumber(attributes.top), segments, plain });
     }
     const images: LayoutImageItem[] = [];
     for (const image of page[2].matchAll(/<image\b([^>]*?)\/?>/g)) {
@@ -162,32 +162,53 @@ export function parsePdfToHtml(xml: string): HtmlPage[] {
   return pages;
 }
 
-function findRun(runs: HtmlRun[], cursor: number, target: string, lineX: number, tolerance: number) {
+function findRun(runs: HtmlRun[], used: Set<number>, target: string, lineX: number, lineY: number) {
   const normalized = normalizeText(target);
-  for (let index = cursor; index < Math.min(runs.length, cursor + 12); index++) {
+
+  // 1) Casamento por texto completo: escolhe a execução mais próxima da posição
+  //    da linha no PDF. O pdftohtml não devolve as execuções na mesma ordem do
+  //    pdftotext, então buscar globalmente por posição é mais confiável do que
+  //    avançar um cursor sequencial (que falhava e perdia negrito/cor).
+  let best = -1;
+  let bestDistance = Infinity;
+  for (let index = 0; index < runs.length; index++) {
+    if (used.has(index)) continue;
     const run = runs[index];
-    if (normalizeText(run.plain) === normalized) {
-      const distance = run.left >= 0 && lineX >= 0 ? Math.abs(run.left - lineX) : 0;
-      if (distance > tolerance) continue;
-      return { run, nextCursor: index + 1 };
+    if (normalizeText(run.plain) !== normalized) continue;
+    const distance = Math.abs(run.left - lineX) + Math.abs(run.top - lineY) * 2;
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = index;
     }
   }
-  for (let index = cursor; index < Math.min(runs.length, cursor + 12); index++) {
-    const run = runs[index];
-    const combined = normalizeText(run.plain);
-    if (combined === normalized) return { run, nextCursor: index + 1 };
+  if (best >= 0) {
+    used.add(best);
+    return runs[best];
   }
-  for (let end = cursor + 1; end <= Math.min(runs.length, cursor + 6); end++) {
-    const slice = runs.slice(cursor, end);
-    const combined = slice.map((run) => normalizeText(run.plain)).join("");
-    if (combined === normalized) {
-      const segments = slice.flatMap((run) => run.segments);
-      return {
-        run: { fontId: runs[cursor].fontId, left: runs[cursor].left, segments, plain: slice.map((run) => run.plain).join("") },
-        nextCursor: end,
-      };
+
+  // 2) Casamento por concatenação de execuções consecutivas (linha dividida em
+  //    vários <text> pelo pdftohtml).
+  for (let index = 0; index < runs.length; index++) {
+    if (used.has(index)) continue;
+    let combined = "";
+    const chosen: number[] = [];
+    for (let end = index; end < Math.min(runs.length, index + 8); end++) {
+      if (used.has(end)) continue;
+      combined += normalizeText(runs[end].plain);
+      chosen.push(end);
+      if (combined === normalized) {
+        chosen.forEach((k) => used.add(k));
+        const segments = chosen.flatMap((k) => runs[k].segments);
+        return {
+          fontId: runs[index].fontId,
+          left: runs[index].left,
+          top: runs[index].top,
+          segments,
+          plain: chosen.map((k) => runs[k].plain).join(""),
+        };
+      }
+      if (combined.length > normalized.length) break;
     }
-    if (combined.length > normalized.length) break;
   }
   return null;
 }
@@ -217,21 +238,20 @@ export function joinLayoutPages(bboxPages: BboxPage[], htmlPages: HtmlPage[]): L
     const html = htmlPages[index];
     const runs = html?.texts ?? [];
     const fonts = html?.fonts ?? {};
-    let cursor = 0;
+    const used = new Set<number>();
     const texts: LayoutTextItem[] = page.lines.map((line) => {
-      const target = normalizeText(line.text);
-      const match = findRun(runs, cursor, target, line.x, 10);
-      const spec = match ? fonts[match.run.fontId] : undefined;
-      if (match) cursor = match.nextCursor;
+      const match = findRun(runs, used, line.text, line.x, line.y);
+      const spec = match ? fonts[match.fontId] : undefined;
       const size = spec && spec.size > 0 ? spec.size : Math.max(6, line.height || 11);
+      const family = spec?.family ?? "Arial";
       const font: LayoutFont = {
-        family: mapFontFamily(spec?.family ?? "Arial"),
+        family: mapFontFamily(family),
         size,
         color: spec?.color ?? "#000000",
-        bold: false,
-        italic: false,
+        bold: /\bbold\b/i.test(family),
+        italic: /italic|oblique/i.test(family),
       };
-      const segments = match ? match.run.segments : [{ text: line.text, bold: false, italic: false }];
+      const segments = match ? match.segments : [{ text: line.text, bold: font.bold, italic: font.italic }];
       return { x: line.x, y: line.y, width: line.width, height: line.height, segments, words: styleWords(line.words, segments, font), font };
     });
 
