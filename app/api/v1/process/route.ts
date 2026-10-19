@@ -39,6 +39,16 @@ export async function POST(request: NextRequest) {
 
   const workerUrl = process.env.PROCESSING_WORKER_URL?.trim();
   if (workerUrl) {
+    // O worker é um processador sem estado: não tem banco nem sessão. A
+    // persistência do histórico e a contagem do limite diário acontecem aqui,
+    // no único tier que enxerga o Postgres. Sem isso o histórico nunca grava.
+    //
+    // `content-length` é o tamanho do corpo multipart (inclui fronteiras e
+    // campos do formulário), então `input_bytes` é uma estimativa por excesso:
+    // serve para o histórico, mas os limites de plano continuam sendo validados
+    // pelo próprio worker, que vê os arquivos já decodificados.
+    const declared = Number(request.headers.get("content-length") || 0);
+    const taskId = await createProcessingTask({ sessionHash: session.hash, toolSlug: tool, fileCount: 1, inputBytes: Number.isFinite(declared) && declared > 0 ? declared : 0 });
     try {
       const target = `${workerUrl.replace(/\/$/, "")}/api/v1/process${request.nextUrl.search}`;
       const proxyHeaders = new Headers(request.headers);
@@ -58,10 +68,14 @@ export async function POST(request: NextRequest) {
       headers.delete("transfer-encoding");
       headers.delete("content-length");
       headers.delete("content-encoding");
-      return new NextResponse(response.body, { status: response.status, headers });
+      const outputType = (headers.get("content-type") || "application/octet-stream").slice(0, 100);
+      const outputBytes = Number(headers.get("content-length") || 0);
+      await (response.ok ? markProcessingTaskCompleted(taskId, Number.isFinite(outputBytes) ? outputBytes : 0, outputType) : markProcessingTaskFailed(taskId, `worker_${response.status}`)).catch(() => undefined);
+      return finish(new NextResponse(response.body, { status: response.status, headers }), request, session);
     } catch (error) {
+      await markProcessingTaskFailed(taskId, "worker_unreachable").catch(() => undefined);
       const message = error instanceof Error ? error.message : "Falha ao contatar o worker de processamento.";
-      return errorResponse(`Não foi possível encaminhar a tarefa: ${message}`, 503);
+      return finish(errorResponse(`Não foi possível encaminhar a tarefa: ${message}`, 503), request, session);
     }
   }
   const declaredLength = Number(request.headers.get("content-length") || 0); if (declaredLength > MAX_REQUEST_BYTES) return errorResponse("A tarefa excede o limite de upload desta versão. Use arquivos menores ou menos arquivos.", 413);
