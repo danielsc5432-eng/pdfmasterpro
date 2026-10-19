@@ -20,6 +20,14 @@ export async function createProcessingTask(input: { sessionHash: string; toolSlu
 export async function markProcessingTaskCompleted(id: string | null, outputBytes: number, outputType: string) { if (!id) return; try { await getDb().execute("UPDATE processing_tasks SET status = 'completed', output_bytes = ?, output_type = ?, completed_at = CURRENT_TIMESTAMP(3) WHERE id = ?", [outputBytes, outputType, id]); } catch (error) { console.warn("[pdfmaster] falha ao registrar conclusão:", error instanceof Error ? error.message : error); } }
 export async function markProcessingTaskFailed(id: string | null, errorCode: string) { if (!id) return; try { await getDb().execute("UPDATE processing_tasks SET status = 'failed', error_code = ?, completed_at = CURRENT_TIMESTAMP(3) WHERE id = ?", [errorCode.slice(0, 80), id]); } catch (error) { console.warn("[pdfmaster] falha ao registrar erro:", error instanceof Error ? error.message : error); } }
 
+export async function countRecentTasks(hash: string, hours = 24) {
+  const window = Math.max(1, Math.min(24 * 30, Math.floor(hours)));
+  try {
+    const [rows] = await getDb().execute<(RowDataPacket & { total: number })[]>(`SELECT COUNT(*) AS total FROM processing_tasks WHERE session_hash = ? AND created_at > DATE_SUB(CURRENT_TIMESTAMP(3), INTERVAL ${window} HOUR)`, [hash]);
+    return Number(rows[0]?.total ?? 0);
+  } catch (error) { console.warn("[pdfmaster] falha ao contar tarefas recentes:", error instanceof Error ? error.message : error); return 0; }
+}
+
 export async function listProcessingTasks(hash: string) {
   const [rows] = await getDb().execute<TaskRow[]>("SELECT id, tool_slug, status, file_count, input_bytes, output_bytes, output_type, error_code, created_at, completed_at, expires_at FROM processing_tasks WHERE session_hash = ? AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP(3)) ORDER BY created_at DESC LIMIT 50", [hash]);
   return rows;

@@ -1,8 +1,24 @@
-import { Check, Info } from "lucide-react";
-import Link from "next/link";
+import { cookies } from "next/headers";
+import { PricingPlans } from "@/components/pricing-plans";
+import { SESSION_COOKIE, readSessionToken } from "@/lib/auth/session";
+import { entitlementsForOpenId } from "@/lib/billing/entitlements";
+import { mercadopagoConfigured } from "@/lib/billing/mercadopago";
 
-export const metadata = { title: "Planos e preços", description: "Conheça os planos do PDF Master Pro e compare limites." };
+export const metadata = { title: "Planos e preços", description: "Compare o plano grátis com o Premium mensal e anual do PDF Master Pro." };
 
-const plans = [{ name: "Grátis", price: "R$ 0", description: "Para tarefas pontuais, sem compromisso.", features: ["Ferramentas essenciais", "Até 25 MB por arquivo", "Até 5 arquivos por tarefa", "Uso convidado em fluxos selecionados"] }, { name: "Pro", price: "R$ 29,90", description: "Para quem trabalha com documentos toda semana.", features: ["Limites maiores", "Processamento em lote", "Histórico ampliado", "Ferramentas premium"], featured: true }, { name: "Business", price: "R$ 79,90", description: "Para equipes que precisam de controle e escala.", features: ["Maior capacidade", "Múltiplos usuários", "Relatórios de consumo", "Controles administrativos"] }];
+export default async function PricingPage() {
+  const jar = await cookies();
+  const user = readSessionToken(jar.get(SESSION_COOKIE)?.value);
+  const { plan } = await entitlementsForOpenId(user?.openId);
 
-export default function PricingPage() { return <div className="page-shell"><div className="page-header"><span className="eyebrow"><span className="eyebrow-dot" /> Planos simples</span><h1>Escolha o ritmo do seu trabalho.</h1><p>Os preços abaixo são parâmetros iniciais. A contratação e os webhooks de pagamento entram quando a integração de billing estiver configurada no ambiente.</p></div><div className="plan-grid">{plans.map((plan) => <article className={`plan-card ${plan.featured ? "featured" : ""}`} key={plan.name}><h2>{plan.name}</h2><div className="plan-price">{plan.price}<small> / mês</small></div><p>{plan.description}</p><ul>{plan.features.map((feature) => <li key={feature}><Check size={14} style={{ verticalAlign: "middle", marginRight: 5, color: "var(--accent)" }} />{feature}</li>)}</ul><Link className={`button ${plan.featured ? "button-primary" : "button-ghost"}`} href={plan.name === "Grátis" ? "/ferramentas" : "/contato"}>{plan.name === "Grátis" ? "Começar agora" : "Falar com a equipe"}</Link></article>)}</div><div className="alert" style={{ maxWidth: 980, margin: "24px auto 0" }}><Info size={16} /> Nenhuma cobrança é iniciada nesta versão. Preços, benefícios e limites poderão ser ajustados no painel administrativo antes da produção.</div></div>; }
+  return (
+    <div className="page-shell">
+      <div className="page-header">
+        <span className="eyebrow"><span className="eyebrow-dot" /> Planos simples</span>
+        <h1>Escolha o ritmo do seu trabalho.</h1>
+        <p>Comece de graça e evolua para o Premium quando precisar de arquivos maiores, ferramentas avançadas e processamento sem limites. Premium por R$ 19,90/mês ou R$ 149,90/ano.</p>
+      </div>
+      <PricingPlans isLoggedIn={Boolean(user)} currentPlanId={plan.id} paymentReady={mercadopagoConfigured()} />
+    </div>
+  );
+}

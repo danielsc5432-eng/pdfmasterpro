@@ -3,8 +3,12 @@ import { z } from "zod";
 import { compressPdf, extractRange, imagesToPdf, mergePdfs, reorderPdf, renderPdfToZip, rotatePdf, splitPdfToZip, verifyOutput } from "@/lib/processing/pdf";
 import { pdfToDocx } from "@/lib/processing/docx";
 import { addWatermark, editMetadata, extractPdfText, numberPages, ocrImage, ocrPdf, protectPdf, redactPdf, signPdf, verifyProtectedPdf, wordToPdf } from "@/lib/processing/extended";
-import { type FileKind, FREE_MAX_FILES, validateFile, safeFilename } from "@/lib/processing/validate";
-import { attachSessionCookie, createProcessingTask, getSessionContext, markProcessingTaskCompleted, markProcessingTaskFailed } from "@/lib/db/tasks";
+import { type FileKind, validateFile, safeFilename } from "@/lib/processing/validate";
+import { attachSessionCookie, countRecentTasks, createProcessingTask, getSessionContext, markProcessingTaskCompleted, markProcessingTaskFailed } from "@/lib/db/tasks";
+import { getTool } from "@/lib/tools/catalog";
+import { resolveEntitlements } from "@/lib/billing/entitlements";
+import { PLAN_HEADER, PLAN_SIGNATURE_HEADER, signPlanHeaders } from "@/lib/billing/plan-token";
+import type { Plan } from "@/lib/plans";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -17,15 +21,32 @@ function contentDisposition(filename: string) { return `attachment; filename="${
 function publicError(error: unknown) { const raw = error instanceof Error ? error.message : ""; if (raw.includes("não está configurado") || raw.includes("Nenhum resultado fictício")) return raw; if (/OCR será necessário|não contém texto extraível|não é uma área válida/i.test(raw)) return raw; if (/parse|header|invalid|unexpected|corrupt|encrypted|syntax|Failed to/i.test(raw)) return "Não foi possível ler o arquivo. Verifique se ele não está corrompido, protegido ou incompleto."; if (/timeout|memory|resource/i.test(raw)) return "O processamento excedeu os limites desta tarefa. Tente um arquivo menor ou menos páginas."; if (raw.startsWith("O ") || raw.startsWith("A ") || raw.startsWith("Este ") || raw.startsWith("WEBP")) return raw; return "O processador não conseguiu concluir a tarefa. Tente novamente com outro arquivo."; }
 function finish<T extends NextResponse>(response: T, request: NextRequest, session: ReturnType<typeof getSessionContext>) { return session.isNew ? attachSessionCookie(response, session.token, request) : response; }
 function numberField(form: FormData, key: string, fallback: number) { const value = Number(form.get(key) ?? fallback); return Number.isFinite(value) ? value : fallback; }
+function planLabel(plan: Plan) { return plan.id === "free" ? "plano grátis" : "plano Premium"; }
 
 export async function POST(request: NextRequest) {
   const tool = request.nextUrl.searchParams.get("tool"); if (!tool) return errorResponse("Selecione uma ferramenta de processamento.");
+  const toolDefinition = getTool(tool);
+  const entitlements = await resolveEntitlements(request);
+  const limits = entitlements.plan.limits;
+
+  if (toolDefinition?.premium && !limits.premiumTools) return errorResponse(`A ferramenta "${toolDefinition.name}" é exclusiva do plano Premium. Assine para liberar todas as ferramentas.`, 402);
+
+  const session = getSessionContext(request);
+  if (Number.isFinite(limits.tasksPerDay)) {
+    const used = await countRecentTasks(session.hash);
+    if (used >= limits.tasksPerDay) return errorResponse(`Você usou as ${limits.tasksPerDay} tarefas gratuitas de hoje. Assine o Premium para processar sem limites.`, 429);
+  }
+
   const workerUrl = process.env.PROCESSING_WORKER_URL?.trim();
   if (workerUrl) {
     try {
       const target = `${workerUrl.replace(/\/$/, "")}/api/v1/process${request.nextUrl.search}`;
       const proxyHeaders = new Headers(request.headers);
       proxyHeaders.set("accept-encoding", "identity");
+      proxyHeaders.delete(PLAN_HEADER);
+      proxyHeaders.delete(PLAN_SIGNATURE_HEADER);
+      const signed = signPlanHeaders(entitlements.plan.id);
+      if (signed) for (const [key, value] of Object.entries(signed)) proxyHeaders.set(key, value);
       const response = await fetch(target, {
         method: "POST",
         headers: proxyHeaders,
@@ -45,13 +66,14 @@ export async function POST(request: NextRequest) {
   }
   const declaredLength = Number(request.headers.get("content-length") || 0); if (declaredLength > MAX_REQUEST_BYTES) return errorResponse("A tarefa excede o limite de upload desta versão. Use arquivos menores ou menos arquivos.", 413);
   let form: FormData; try { form = await request.formData(); } catch { return errorResponse("Não foi possível receber os arquivos. Tente novamente.", 400); }
-  const entries = form.getAll("files").filter((value): value is File => typeof value !== "string" && value instanceof File); if (!entries.length) return errorResponse("Envie pelo menos um arquivo."); if (entries.length > FREE_MAX_FILES) return errorResponse("O plano grátis permite até 5 arquivos por tarefa.");
+  const entries = form.getAll("files").filter((value): value is File => typeof value !== "string" && value instanceof File); if (!entries.length) return errorResponse("Envie pelo menos um arquivo."); if (entries.length > limits.maxFilesPerTask) return errorResponse(`Seu ${planLabel(entitlements.plan)} permite até ${limits.maxFilesPerTask} arquivos por tarefa.`);
   const multiFileTool = tool === "juntar-pdf" || tool === "imagens-para-pdf"; if (!multiFileTool && entries.length > 1) return errorResponse("Esta ferramenta processa um arquivo por vez. Remova os arquivos extras e tente novamente.");
   const isImages = tool === "imagens-para-pdf"; const isWord = tool === "word-para-pdf"; const isOcr = tool === "ocr-pdf";
   const allowed: FileKind[] = isImages ? ["jpg", "png", "webp"] : isWord ? ["doc", "docx"] : isOcr ? ["pdf", "jpg", "png"] : ["pdf"];
+  const fileLimits = { maxFileBytes: limits.maxFileBytes, planLabel: planLabel(entitlements.plan) };
   const files: { name: string; bytes: Uint8Array; kind: FileKind }[] = [];
-  for (const entry of entries) { const bytes = new Uint8Array(await entry.arrayBuffer()); const result = validateFile(entry.name, bytes, allowed, entry.type); if (!result.ok) return errorResponse(result.message, 422); files.push({ name: entry.name, bytes, kind: result.kind }); }
-  const session = getSessionContext(request); const taskId = await createProcessingTask({ sessionHash: session.hash, toolSlug: tool, fileCount: files.length, inputBytes: files.reduce((total, file) => total + file.bytes.byteLength, 0) });
+  for (const entry of entries) { const bytes = new Uint8Array(await entry.arrayBuffer()); const result = validateFile(entry.name, bytes, allowed, entry.type, fileLimits); if (!result.ok) return errorResponse(result.message, 422); files.push({ name: entry.name, bytes, kind: result.kind }); }
+  const taskId = await createProcessingTask({ sessionHash: session.hash, toolSlug: tool, fileCount: files.length, inputBytes: files.reduce((total, file) => total + file.bytes.byteLength, 0) });
   const invalidTask = async (message: string, status = 400) => { await markProcessingTaskFailed(taskId, "invalid_options").catch(() => undefined); return finish(errorResponse(message, status), request, session); };
   try {
     let output: Uint8Array; let filename = `${safeFilename(files[0].name, "documento")}-resultado.pdf`;
