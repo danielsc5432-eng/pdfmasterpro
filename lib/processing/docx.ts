@@ -1,10 +1,12 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import JSZip from "jszip";
 import { Document, FrameAnchorType, FrameWrap, ImageRun, LineRuleType, PageOrientation, Packer, Paragraph, TabStopType, TextRun } from "docx";
 import { parseLayout, type LayoutImageItem, type LayoutPage, type LayoutTextItem } from "./layout";
 import { pdfToDocxWithMsWord } from "./msword";
 import { commandExists, execFile } from "./system";
+import { extractPdfVectors, injectVectorShapes, type PdfVectorPage } from "./vector";
 
 export type DocxParagraph = { text: string; pageBreakBefore: boolean; heading: boolean };
 
@@ -240,6 +242,20 @@ async function readPageImages(directory: string, prefix: string, inputPath: stri
   }
 }
 
+/** Abre o DOCX como ZIP, injeta formas VML no document.xml e reempacota. */
+async function injectVmlIntoDocx(docx: Uint8Array, vectors: PdfVectorPage[]): Promise<Uint8Array<ArrayBuffer>> {
+  const zip = await JSZip.loadAsync(docx).catch(() => null);
+  if (!zip) return docx as Uint8Array<ArrayBuffer>;
+  const docEntry = zip.file("word/document.xml");
+  if (!docEntry) return docx as Uint8Array<ArrayBuffer>;
+  const xml = await docEntry.async("string");
+  const patched = injectVectorShapes(xml, vectors);
+  if (patched === xml) return docx as Uint8Array<ArrayBuffer>;
+  zip.file("word/document.xml", patched);
+  const out = await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
+  return new Uint8Array(out);
+}
+
 export async function pdfToDocx(input: Uint8Array, originalName = "documento") {
   // Motor principal: Microsoft Word (abre o PDF e salva em DOCX preservando o layout nativamente).
   const viaWord = await pdfToDocxWithMsWord(input);
@@ -268,6 +284,8 @@ export async function pdfToDocx(input: Uint8Array, originalName = "documento") {
     for (const page of pages) for (const image of page.images) await loadAsset(image, directory, assets);
     const hasText = pages.some((page) => page.texts.some((item) => item.segments.some((segment) => segment.text.trim())));
     if (pages.length && (hasText || assets.size)) {
+      // Extrai vetores (linhas/retângulos) do PDF para desenhar bordas e grades.
+      const vectors = await extractPdfVectors(input);
       const document = new Document({
         creator: "PDF Master Pro",
         title: originalName,
@@ -275,7 +293,12 @@ export async function pdfToDocx(input: Uint8Array, originalName = "documento") {
         styles: { default: { document: { run: { font: "Arial", size: 22 } } } },
         sections: layoutSections(pages, assets),
       });
-      return new Uint8Array(await Packer.toBuffer(document));
+      let buffer = new Uint8Array(await Packer.toBuffer(document));
+      // Injeta formas VML (bordas/linhas do PDF) no document.xml para fidelidade visual.
+      if (vectors.some((v) => v.lines.length || v.rects.length)) {
+        buffer = await injectVmlIntoDocx(buffer, vectors);
+      }
+      return buffer;
     }
 
     await execFile(extractor, ["-enc", "UTF-8", inputPath, textPath], { timeout: 180000, maxBuffer: 96 * 1024 * 1024 });
