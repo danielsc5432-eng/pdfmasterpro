@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { RowDataPacket } from "mysql2/promise";
-import { getDb } from "@/lib/db";
+import { query } from "@/lib/db";
 
 export type SubscriptionStatus = "pending" | "authorized" | "paused" | "cancelled" | "expired" | "rejected";
 
@@ -22,10 +21,10 @@ export type Subscription = {
   createdAt: Date;
 };
 
-type SubscriptionRow = RowDataPacket & {
+type SubscriptionRow = {
   id: string; open_id: string; provider: string; plan_id: string; status: SubscriptionStatus;
-  provider_subscription_id: string | null; provider_payer_email: string | null; amount_cents: number;
-  currency: string; frequency: number; frequency_type: string; started_at: Date | null;
+  provider_subscription_id: string | null; provider_payer_email: string | null; amount_cents: number | string;
+  currency: string; frequency: number | string; frequency_type: string; started_at: Date | null;
   current_period_end: Date | null; cancelled_at: Date | null; created_at: Date;
 };
 
@@ -58,8 +57,8 @@ function warn(action: string, error: unknown) {
 /** Assinatura que concede Premium agora (autorizada e dentro do período). */
 export async function getActiveSubscription(openId: string): Promise<Subscription | null> {
   try {
-    const [rows] = await getDb().execute<SubscriptionRow[]>(
-      `SELECT ${COLUMNS} FROM subscriptions WHERE open_id = ? AND status = 'authorized' AND (current_period_end IS NULL OR current_period_end > CURRENT_TIMESTAMP(3)) ORDER BY created_at DESC LIMIT 1`,
+    const rows = await query<SubscriptionRow>(
+      `SELECT ${COLUMNS} FROM subscriptions WHERE open_id = ? AND status = 'authorized' AND (current_period_end IS NULL OR current_period_end > CURRENT_TIMESTAMP) ORDER BY created_at DESC LIMIT 1`,
       [openId],
     );
     return rows[0] ? mapSubscription(rows[0]) : null;
@@ -69,14 +68,14 @@ export async function getActiveSubscription(openId: string): Promise<Subscriptio
 /** Última assinatura registrada, seja qual for o status (para exibição no painel). */
 export async function getLatestSubscription(openId: string): Promise<Subscription | null> {
   try {
-    const [rows] = await getDb().execute<SubscriptionRow[]>(`SELECT ${COLUMNS} FROM subscriptions WHERE open_id = ? ORDER BY created_at DESC LIMIT 1`, [openId]);
+    const rows = await query<SubscriptionRow>(`SELECT ${COLUMNS} FROM subscriptions WHERE open_id = ? ORDER BY created_at DESC LIMIT 1`, [openId]);
     return rows[0] ? mapSubscription(rows[0]) : null;
   } catch (error) { warn("getLatestSubscription", error); return null; }
 }
 
 export async function findSubscriptionByProviderId(provider: string, providerSubscriptionId: string): Promise<Subscription | null> {
   try {
-    const [rows] = await getDb().execute<SubscriptionRow[]>(`SELECT ${COLUMNS} FROM subscriptions WHERE provider = ? AND provider_subscription_id = ? LIMIT 1`, [provider, providerSubscriptionId]);
+    const rows = await query<SubscriptionRow>(`SELECT ${COLUMNS} FROM subscriptions WHERE provider = ? AND provider_subscription_id = ? LIMIT 1`, [provider, providerSubscriptionId]);
     return rows[0] ? mapSubscription(rows[0]) : null;
   } catch (error) { warn("findSubscriptionByProviderId", error); return null; }
 }
@@ -87,7 +86,7 @@ export async function createSubscription(input: {
 }): Promise<string | null> {
   const id = randomUUID();
   try {
-    await getDb().execute(
+    await query(
       "INSERT INTO subscriptions (id, open_id, provider, plan_id, status, provider_subscription_id, provider_payer_email, amount_cents, currency, frequency, frequency_type) VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, 'BRL', ?, ?)",
       [id, input.openId, input.provider, input.planId, input.providerSubscriptionId, input.payerEmail?.slice(0, 320) ?? null, input.amountCents, input.frequency, input.frequencyType],
     );
@@ -106,7 +105,7 @@ export async function updateSubscription(id: string, patch: {
   if (patch.providerSubscriptionId !== undefined) { sets.push("provider_subscription_id = ?"); params.push(patch.providerSubscriptionId); }
   if (!sets.length) return;
   try {
-    await getDb().execute(`UPDATE subscriptions SET ${sets.join(", ")} WHERE id = ?`, [...params, id]);
+    await query(`UPDATE subscriptions SET ${sets.join(", ")} WHERE id = ?`, [...params, id]);
   } catch (error) { warn("updateSubscription", error); }
 }
 
@@ -115,14 +114,15 @@ export async function cancelActiveSubscription(openId: string): Promise<Subscrip
   try {
     const active = await getActiveSubscription(openId);
     if (!active) return null;
-    await getDb().execute("UPDATE subscriptions SET cancelled_at = CURRENT_TIMESTAMP(3), current_period_end = COALESCE(current_period_end, DATE_ADD(CURRENT_TIMESTAMP(3), INTERVAL frequency MONTH)) WHERE id = ?", [active.id]);
+    // Sem período registrado, o acesso segue até o fim do ciclo vigente da cobrança.
+    await query("UPDATE subscriptions SET cancelled_at = CURRENT_TIMESTAMP, current_period_end = COALESCE(current_period_end, CURRENT_TIMESTAMP + make_interval(months => frequency)) WHERE id = ?", [active.id]);
     return { ...active, cancelledAt: new Date() };
   } catch (error) { warn("cancelActiveSubscription", error); return null; }
 }
 
 export async function recordBillingEvent(input: { provider: string; topic: string | null; status: string | null; providerResourceId: string | null; payload: unknown }) {
   try {
-    await getDb().execute(
+    await query(
       "INSERT INTO billing_events (id, provider, topic, status, provider_resource_id, payload) VALUES (?, ?, ?, ?, ?, ?)",
       [randomUUID(), input.provider, input.topic?.slice(0, 60) ?? null, input.status?.slice(0, 40) ?? null, input.providerResourceId?.slice(0, 191) ?? null, JSON.stringify(input.payload ?? null)],
     );

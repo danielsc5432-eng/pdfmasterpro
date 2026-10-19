@@ -1,11 +1,13 @@
+-- Usuários autenticados (Google OAuth).
+
 CREATE TABLE IF NOT EXISTS users (
-  open_id VARCHAR(191) NOT NULL,
+  open_id VARCHAR(191) PRIMARY KEY,
   email VARCHAR(320) NOT NULL,
   display_name VARCHAR(191) NOT NULL,
-  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  last_login_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  PRIMARY KEY (open_id),
-  UNIQUE KEY users_email_unique (email),
-  KEY users_last_login_idx (last_login_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  created_at TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  last_login_at TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique ON users (email);
+CREATE INDEX IF NOT EXISTS users_last_login_idx ON users (last_login_at);

@@ -28,4 +28,4 @@ Caso não defina `PROCESSING_WORKER_URL`:
 
 ## Persistência e retenção
 
-A aplicação persiste metadados de tarefas em MySQL (`processing_tasks`) por hash de sessão anônima: ferramenta, quantidade/tamanho, status, tipo/tamanho do resultado e timestamps. Conteúdo e nomes não entram no banco. Os bytes ainda são temporários; antes do lançamento em escala, adicionar storage privado, URLs assinadas, fila/worker e deleção física.
+A aplicação persiste metadados de tarefas em Postgres/Neon (`processing_tasks`) por hash de sessão anônima: ferramenta, quantidade/tamanho, status, tipo/tamanho do resultado e timestamps. Conteúdo e nomes não entram no banco. Os bytes ainda são temporários; antes do lançamento em escala, adicionar storage privado, URLs assinadas, fila/worker e deleção física.
