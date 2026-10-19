@@ -24,14 +24,19 @@ export async function POST(request: NextRequest) {
   if (workerUrl) {
     try {
       const target = `${workerUrl.replace(/\/$/, "")}/api/v1/process${request.nextUrl.search}`;
+      const proxyHeaders = new Headers(request.headers);
+      proxyHeaders.set("accept-encoding", "identity");
       const response = await fetch(target, {
         method: "POST",
-        headers: request.headers,
+        headers: proxyHeaders,
         body: request.body,
         duplex: "half",
       } as RequestInit);
       const headers = new Headers(response.headers);
+      // O fetch já entrega o corpo decodificado: cabeçalhos de entidade do upstream ficariam inconsistentes.
       headers.delete("transfer-encoding");
+      headers.delete("content-length");
+      headers.delete("content-encoding");
       return new NextResponse(response.body, { status: response.status, headers });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao contatar o worker de processamento.";
