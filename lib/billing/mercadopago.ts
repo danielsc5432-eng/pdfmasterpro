@@ -81,12 +81,29 @@ export type PreferencePayment = {
   payer?: { id?: number; email?: string };
 };
 
+/**
+ * Meios de pagamento aceitos na compra avulsa.
+ *
+ * `all` deixa o Mercado Pago mostrar tudo (cartão, Pix, boleto).
+ * `pix` restringe a tela ao Pix, para o botão dedicado.
+ */
+export type CheckoutMethod = "all" | "pix";
+
+/** Restrições de `payment_methods` para cada meio escolhido. */
+export function paymentMethodsFor(method: CheckoutMethod) {
+  if (method !== "pix") return undefined;
+  // O Pix é um meio por conta (não aparece em /v1/payment_methods como
+  // bandeira), então a forma de isolá-lo é excluir cartão e boleto.
+  return { excluded_payment_types: [{ id: "credit_card" }, { id: "debit_card" }, { id: "ticket" }] };
+}
+
 export async function createPreference(input: {
   plan: Plan;
   externalReference: string;
   backUrl: string;
   notificationUrl: string;
   payerEmail?: string | null;
+  method?: CheckoutMethod;
 }) {
   return mpRequest<Preference>("/checkout/preferences", {
     method: "POST",
@@ -107,6 +124,7 @@ export async function createPreference(input: {
       notification_url: input.notificationUrl,
       statement_descriptor: "PDFMASTERPRO",
       ...(input.payerEmail ? { payer: { email: input.payerEmail } } : {}),
+      ...(paymentMethodsFor(input.method ?? "all") ? { payment_methods: paymentMethodsFor(input.method ?? "all") } : {}),
     }),
   });
 }

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { FREE_PLAN, PLANS, annualSavingsPercent, formatBRL, getPlan, isPremiumPlanId, planForInterval } from "../../lib/plans";
 import { planForSubscription } from "../../lib/billing/entitlements";
+import { paymentMethodsFor } from "../../lib/billing/mercadopago";
 import { PLAN_HEADER, PLAN_SIGNATURE_HEADER, readSignedPlan, signPlanHeaders } from "../../lib/billing/plan-token";
 import { validateFile } from "../../lib/processing/validate";
 
@@ -46,6 +47,19 @@ test("limite por arquivo respeita o plano informado", () => {
   bytes.set(new TextEncoder().encode("%PDF-1.7\n"), 0);
   assert.equal(validateFile("grande.pdf", bytes, ["pdf"], "application/pdf").ok, false);
   assert.equal(validateFile("grande.pdf", bytes, ["pdf"], "application/pdf", { maxFileBytes: 100 * 1024 * 1024, planLabel: "plano Premium" }).ok, true);
+});
+
+test("botão do Pix restringe o checkout a Pix, sem cartão nem boleto", () => {
+  // Sem restrição: o Mercado Pago mostra todos os meios disponíveis.
+  assert.equal(paymentMethodsFor("all"), undefined);
+
+  // Com Pix: exclui cartão de crédito, débito e boleto. O Pix não aparece em
+  // /v1/payment_methods (é um meio por conta), então isolar só é possível
+  // removendo os demais tipos.
+  const pix = paymentMethodsFor("pix");
+  assert.ok(pix);
+  assert.deepEqual(pix!.excluded_payment_types.map((type) => type.id), ["credit_card", "debit_card", "ticket"]);
+  assert.equal(pix!.excluded_payment_types.some((type) => type.id === "bank_transfer"), false);
 });
 
 test("cabeçalho de plano só é aceito com assinatura HMAC válida", () => {

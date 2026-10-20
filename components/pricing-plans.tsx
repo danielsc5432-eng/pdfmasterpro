@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Loader2, Sparkles } from "lucide-react";
+import { Check, Loader2, QrCode, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { annualSavingsPercent, formatBRL, PLANS, type Plan, type PlanId } from "@/lib/plans";
@@ -32,14 +32,17 @@ export function PricingPlans({ isLoggedIn, currentPlanId, paymentReady }: Props)
   const alreadyPremium = currentPlanId !== "free";
   const currentPlan = PLANS.find((plan) => plan.id === currentPlanId) ?? freePlan;
 
-  async function startCheckout(plan: Plan, once = false) {
+  async function startCheckout(plan: Plan, method: "recurring" | "once" | "pix" = "recurring") {
     setError(null);
     setLoading(plan.id);
     try {
-      const response = await fetch(once ? "/api/billing/checkout-once" : "/api/billing/checkout", {
+      const recurring = method === "recurring";
+      const body = new URLSearchParams({ plan: plan.id });
+      if (method === "pix") body.set("method", "pix");
+      const response = await fetch(recurring ? "/api/billing/checkout" : "/api/billing/checkout-once", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ plan: plan.id }).toString(),
+        body: body.toString(),
       });
       const data = (await response.json().catch(() => ({}))) as { initPoint?: string; error?: string };
       if (!response.ok || !data.initPoint) throw new Error(data.error || "Não foi possível iniciar o checkout.");
@@ -90,14 +93,17 @@ export function PricingPlans({ isLoggedIn, currentPlanId, paymentReady }: Props)
               <button type="button" className="button button-primary" disabled={loading !== null} onClick={() => startCheckout(premium)}>
                 {loading === premium.id ? <Loader2 className="spinner" size={16} /> : <Sparkles size={16} />} Assinar agora
               </button>
-              <button type="button" className="button button-ghost" disabled={loading !== null} onClick={() => startCheckout(premium, true)}>
-                {loading === premium.id ? <Loader2 className="spinner" size={16} /> : null} Pagar uma vez
+              <button type="button" className="button button-ghost" disabled={loading !== null} onClick={() => startCheckout(premium, "pix")}>
+                {loading === premium.id ? <Loader2 className="spinner" size={16} /> : <QrCode size={16} />} Pagar com Pix
+              </button>
+              <button type="button" className="button button-ghost" disabled={loading !== null} onClick={() => startCheckout(premium, "once")}>
+                {loading === premium.id ? <Loader2 className="spinner" size={16} /> : null} Pagar uma vez (cartão)
               </button>
             </>
           )}
           <p className="plan-note">Cancele quando quiser. Sem fidelidade.</p>
           {!alreadyPremium && isLoggedIn && paymentReady ? (
-            <p className="plan-note">Assinar renova automaticamente. <strong>Pagar uma vez</strong> libera o Premium por {premium.interval === "year" ? "12 meses" : "1 mês"}, sem renovação.</p>
+            <p className="plan-note">Assinar renova automaticamente. <strong>Pagar com Pix</strong> ou <strong>Pagar uma vez</strong> libera o Premium por {premium.interval === "year" ? "12 meses" : "1 mês"}, sem renovação.</p>
           ) : null}
         </article>
 
