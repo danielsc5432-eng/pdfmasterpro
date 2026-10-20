@@ -57,6 +57,67 @@ export async function createPreapproval(input: { plan: Plan; payerEmail: string;
   });
 }
 
+/**
+ * Pagamento único via Checkout Pro ("preference").
+ *
+ * Alternativa à assinatura recorrente: cobra o período de uma vez (mensal ou
+ * anual) e libera o Premium até `current_period_end`. Útil quando o antifraude
+ * bloqueia a recorrência ou quando o cliente prefere não assinar.
+ */
+export type Preference = {
+  id: string;
+  init_point?: string;
+  sandbox_init_point?: string;
+  external_reference?: string;
+};
+
+export type PreferencePayment = {
+  id: string;
+  status?: string;
+  status_detail?: string;
+  external_reference?: string;
+  transaction_amount?: number;
+  date_approved?: string;
+  payer?: { id?: number; email?: string };
+};
+
+export async function createPreference(input: {
+  plan: Plan;
+  externalReference: string;
+  backUrl: string;
+  notificationUrl: string;
+  payerEmail?: string | null;
+}) {
+  return mpRequest<Preference>("/checkout/preferences", {
+    method: "POST",
+    body: JSON.stringify({
+      items: [
+        {
+          id: input.plan.id,
+          title: `PDF Master Pro Premium (${input.plan.interval === "year" ? "anual" : "mensal"})`,
+          description: `Acesso Premium por ${input.plan.interval === "year" ? "12 meses" : "1 mês"}`,
+          quantity: 1,
+          currency_id: "BRL",
+          unit_price: input.plan.priceCents / 100,
+        },
+      ],
+      external_reference: input.externalReference,
+      back_urls: { success: input.backUrl, pending: input.backUrl, failure: input.backUrl },
+      auto_return: "approved",
+      notification_url: input.notificationUrl,
+      statement_descriptor: "PDFMASTERPRO",
+      ...(input.payerEmail ? { payer: { email: input.payerEmail } } : {}),
+    }),
+  });
+}
+
+export function getPayment(id: string) { return mpRequest<PreferencePayment>(`/v1/payments/${encodeURIComponent(id)}`); }
+
+/** Payment aprovado de uma compra avulsa? */
+export function paymentApproved(payment: PreferencePayment | null | undefined): boolean {
+  return payment?.status === "approved";
+}
+
 export function getPreapproval(id: string) { return mpRequest<Preapproval>(`/preapproval/${encodeURIComponent(id)}`); }
 
 export function cancelPreapproval(id: string) { return mpRequest<Preapproval>(`/preapproval/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify({ status: "cancelled" }) }); }

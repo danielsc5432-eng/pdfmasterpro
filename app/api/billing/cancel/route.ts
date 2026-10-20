@@ -12,6 +12,13 @@ export async function POST(request: NextRequest) {
   const active = await getActiveSubscription(user.openId);
   if (!active) return NextResponse.json({ error: "Nenhuma assinatura ativa encontrada." }, { status: 404 });
 
+  if (active.provider === "mercadopago-checkout") {
+    // Compra avulsa já paga: não há recorrência a cancelar no Mercado Pago.
+    // O acesso segue até o fim do período e simplesmente não renova.
+    await cancelActiveSubscription(user.openId);
+    return NextResponse.json({ ok: true, recurring: false });
+  }
+
   if (active.providerSubscriptionId && mercadopagoConfigured()) {
     try {
       await cancelPreapproval(active.providerSubscriptionId);

@@ -32,11 +32,11 @@ export function PricingPlans({ isLoggedIn, currentPlanId, paymentReady }: Props)
   const alreadyPremium = currentPlanId !== "free";
   const currentPlan = PLANS.find((plan) => plan.id === currentPlanId) ?? freePlan;
 
-  async function startCheckout(plan: Plan) {
+  async function startCheckout(plan: Plan, once = false) {
     setError(null);
     setLoading(plan.id);
     try {
-      const response = await fetch("/api/billing/checkout", {
+      const response = await fetch(once ? "/api/billing/checkout-once" : "/api/billing/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({ plan: plan.id }).toString(),
@@ -86,11 +86,19 @@ export function PricingPlans({ isLoggedIn, currentPlanId, paymentReady }: Props)
           ) : !paymentReady ? (
             <Link className="button button-primary" href="/contato">Falar com o suporte</Link>
           ) : (
-            <button type="button" className="button button-primary" disabled={loading !== null} onClick={() => startCheckout(premium)}>
-              {loading ? <Loader2 className="spinner" size={16} /> : <Sparkles size={16} />} Assinar agora
-            </button>
+            <>
+              <button type="button" className="button button-primary" disabled={loading !== null} onClick={() => startCheckout(premium)}>
+                {loading === premium.id ? <Loader2 className="spinner" size={16} /> : <Sparkles size={16} />} Assinar agora
+              </button>
+              <button type="button" className="button button-ghost" disabled={loading !== null} onClick={() => startCheckout(premium, true)}>
+                {loading === premium.id ? <Loader2 className="spinner" size={16} /> : null} Pagar uma vez
+              </button>
+            </>
           )}
           <p className="plan-note">Cancele quando quiser. Sem fidelidade.</p>
+          {!alreadyPremium && isLoggedIn && paymentReady ? (
+            <p className="plan-note">Assinar renova automaticamente. <strong>Pagar uma vez</strong> libera o Premium por {premium.interval === "year" ? "12 meses" : "1 mês"}, sem renovação.</p>
+          ) : null}
         </article>
 
         <article className="plan-card">

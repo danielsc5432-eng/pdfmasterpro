@@ -1,9 +1,68 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthorizedPayment, getPreapproval, mapPreapprovalStatus, mercadopagoConfigured, verifyWebhookSignature } from "@/lib/billing/mercadopago";
+import { getAuthorizedPayment, getPayment, getPreapproval, mapPreapprovalStatus, mercadopagoConfigured, verifyWebhookSignature } from "@/lib/billing/mercadopago";
 import { createSubscription, findSubscriptionByProviderId, recordBillingEvent, updateSubscription, type Subscription } from "@/lib/db/subscriptions";
 import { getPlan } from "@/lib/plans";
 
 export const runtime = "nodejs";
+
+/**
+ * Sincroniza uma compra avulsa (Checkout Pro).
+ *
+ * O `external_reference` é o openId do comprador. Ao aprovar, a assinatura
+ * registrada no checkout é autorizada com validade de um mês ou de um ano.
+ */
+async function syncPayment(paymentId: string) {
+  const payment = await getPayment(paymentId);
+  const openId = payment.external_reference;
+  if (!openId) return null;
+
+  let record: Subscription | null = await findSubscriptionByProviderId("mercadopago-checkout", paymentId);
+
+  if (!record) {
+    // O webhook pode chegar pelo id do pagamento, sem a preferência associada:
+    // procura a assinatura pendente mais recente desse usuário.
+    const { getLatestSubscription } = await import("@/lib/db/subscriptions");
+    const latest = await getLatestSubscription(openId);
+    if (latest && latest.provider === "mercadopago-checkout" && latest.status === "pending") record = latest;
+  }
+
+  if (!record) {
+    const plan = getPlan(payment.transaction_amount === 149.9 ? "premium-annual" : "premium-monthly");
+    await createSubscription({
+      openId,
+      planId: plan.id,
+      provider: "mercadopago-checkout",
+      providerSubscriptionId: paymentId,
+      payerEmail: payment.payer?.email ?? null,
+      amountCents: Math.round((payment.transaction_amount ?? plan.priceCents / 100) * 100),
+      frequency: plan.interval === "year" ? 12 : 1,
+      frequencyType: "months",
+    });
+    record = await findSubscriptionByProviderId("mercadopago-checkout", paymentId);
+  }
+
+  if (!record) return null;
+
+  if (payment.status === "approved") {
+    const months = record.frequencyType === "months" ? record.frequency : 1;
+    const periodEnd = new Date();
+    periodEnd.setMonth(periodEnd.getMonth() + months);
+    await updateSubscription(record.id, {
+      status: "authorized",
+      startedAt: record.startedAt ?? new Date(),
+      currentPeriodEnd: periodEnd,
+      providerSubscriptionId: paymentId,
+    });
+    return "authorized";
+  }
+
+  if (payment.status === "rejected" || payment.status === "cancelled") {
+    await updateSubscription(record.id, { status: payment.status === "rejected" ? "rejected" : "cancelled", cancelledAt: new Date() });
+    return payment.status;
+  }
+
+  return "pending";
+}
 
 async function syncPreapproval(preapprovalId: string) {
   const preapproval = await getPreapproval(preapprovalId);
@@ -68,6 +127,8 @@ export async function POST(request: NextRequest) {
     } else if ((topic === "authorized_payment" || topic === "subscription_authorized_payment") && resourceId) {
       const payment = await getAuthorizedPayment(resourceId);
       if (payment.preapproval_id) await syncPreapproval(payment.preapproval_id);
+    } else if (topic === "payment" && resourceId) {
+      await syncPayment(resourceId);
     }
   } catch (error) {
     // Sempre respondemos 200 para o Mercado Pago não entrar em ciclo de reenvios.
