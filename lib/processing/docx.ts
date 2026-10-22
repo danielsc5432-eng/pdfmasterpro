@@ -1,8 +1,9 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import JSZip from "jszip";
-import { Document, FrameAnchorType, FrameWrap, ImageRun, LineRuleType, PageOrientation, Packer, Paragraph, TabStopType, TextRun } from "docx";
+import { AlignmentType, BorderStyle, Document, FrameAnchorType, FrameWrap, ImageRun, LineRuleType, PageOrientation, Packer, Paragraph, ShadingType, Table, TableCell, TableLayoutType, TableRow, TabStopType, TextRun, VerticalAlign, WidthType } from "docx";
 import { parseLayout, type LayoutImageItem, type LayoutPage, type LayoutTextItem } from "./layout";
 import { pdfToDocxWithMsWord } from "./msword";
 import { commandExists, execFile } from "./system";
@@ -168,17 +169,147 @@ function imageParagraph(item: LayoutImageItem, data: Uint8Array) {
   });
 }
 
+function getCellText(item: LayoutTextItem) {
+  const parts = item.segments.filter(s => s.text).map(s => s.text);
+  return parts.join("");
+}
+
+function makeTextParagraphFromItems(items: LayoutTextItem[]) {
+  if (items.length === 0) return new Paragraph({ children: [] });
+  const item = items[0];
+  const color = item.font.color.replace("#", "").toUpperCase();
+  const regular = /^[0-9A-F]{6}$/.test(color) ? color : "000000";
+  const run = (text: string, bold: boolean, italic: boolean, font = item.font) => new TextRun({
+    text,
+    font: font.family || "Arial",
+    size: Math.max(2, Math.round((font.size || 10) * 2)),
+    bold: bold || font.bold,
+    italics: italic || font.italic,
+    color: (() => { const c = (font.color || "#000000").replace("#", "").toUpperCase(); return /^[0-9A-F]{6}$/.test(c) ? c : "000000"; })(),
+  });
+  const children: TextRun[] = [];
+  if (items.length > 1) {
+    items.forEach((line, lineIndex) => {
+      if (lineIndex > 0) children.push(new TextRun({ break: 1, text: "" }));
+      for (const segment of line.segments.filter((segment) => segment.text)) {
+        children.push(new TextRun({
+          text: segment.text,
+          font: line.font.family || "Arial",
+          size: Math.max(2, Math.round((line.font.size || 10) * 2)),
+          bold: segment.bold || line.font.bold,
+          italics: segment.italic || line.font.italic,
+          color: (() => { const c = (line.font.color || "#000000").replace("#", "").toUpperCase(); return /^[0-9A-F]{6}$/.test(c) ? c : "000000"; })(),
+        }));
+      }
+    });
+  } else {
+    for (const segment of item.segments.filter((segment) => segment.text)) {
+      children.push(run(segment.text, segment.bold, segment.italic));
+    }
+  }
+  return new Paragraph({
+    spacing: { before: 40, after: 40 },
+    children: children.length ? children : [new TextRun({ text: getCellText(items[0]) || "" })],
+  });
+}
+
 function layoutSections(pages: LayoutPage[], assets: Map<string, Uint8Array>) {
   return pages.map((page) => {
-    const children: Paragraph[] = [];
+    const children: (Paragraph | Table)[] = [];
     const textItems = page.texts.filter((item) => item.segments.some((segment) => segment.text.trim()));
-    // Fidelidade máxima: cada linha do PDF vira um quadro próprio, posicionado
-    // de forma exata. Não fundimos linhas em parágrafos, pois isso impede o
-    // posicionamento por tabulação e causa desvio horizontal acumulado.
-    const ordered = [...textItems].sort((a, b) => a.y - b.y || a.x - b.x);
-    for (const item of ordered) {
-      children.push(textParagraph([item], page.width));
+    if (!textItems.length && !page.images.length) {
+      children.push(new Paragraph({ children: [] }));
+      return { properties: { page: { size: { width: twips(page.width), height: twips(page.height), orientation: page.width > page.height ? PageOrientation.LANDSCAPE : PageOrientation.PORTRAIT }, margin: { top: 720, right: 720, bottom: 720, left: 720 } } }, children };
     }
+
+    // Detect two-column layout
+    const mid = page.width / 2;
+    const left = textItems.filter(t => t.x < mid - 30).sort((a,b) => b.y - a.y || a.x - b.x);
+    const right = textItems.filter(t => t.x > mid + 30).sort((a,b) => b.y - a.y || a.x - b.x);
+    const hasTwoCols = left.length >= 3 && right.length >= 3;
+
+    if (hasTwoCols) {
+      // Render as simple paragraphs in reading order (left then right)
+      const ordered = [...left, ...right].sort((a,b) => b.y - a.y || a.x - b.x);
+      for (const item of ordered) {
+        children.push(makeTextParagraphFromItems([item]));
+      }
+    } else {
+      // Detect tables by Y-groups and X-clusters
+      const yMap = new Map<number, LayoutTextItem[]>();
+      for (const item of textItems) {
+        let key = -1;
+        for (const k of yMap.keys()) if (Math.abs(k - item.y) < 5) { key = k; break; }
+        if (key >= 0) yMap.get(key)!.push(item); else yMap.set(item.y, [item]);
+      }
+      const sortedY = Array.from(yMap.keys()).sort((a,b) => b - a);
+      const rows = sortedY.map(y => (yMap.get(y) || []).sort((a,b) => a.x - b.x));
+      const nonEmptyRows = rows.filter(r => r.length > 0 && r.some(c => getCellText(c).trim()));
+      
+      // Collect column X positions
+      const allX: number[] = [];
+      for (const r of nonEmptyRows) for (const c of r) allX.push(c.x);
+      const clusters: number[] = [];
+      for (const x of [...allX].sort((a,b)=>a-b)) {
+        if (clusters.length === 0 || x - clusters[clusters.length-1] > 8) clusters.push(x);
+      }
+      
+      const isTable = clusters.length >= 2 && nonEmptyRows.length >= 2;
+      
+      if (isTable && clusters.length <= 12) {
+        // Build table
+        const tableRows = nonEmptyRows.map(rowItems => {
+          // Map items to columns
+          const cells = clusters.map((cx, ci) => {
+            // Find item closest to this cluster
+            let best: LayoutTextItem | null = null;
+            let bestDist = 9999;
+            for (const it of rowItems) {
+              const d = Math.abs(it.x - cx);
+              if (d < bestDist) { bestDist = d; best = it; }
+            }
+            // Also check if item spans columns
+            if (best && bestDist < 40) {
+              const txt = getCellText(best);
+              const isHeader = rowItems === nonEmptyRows[0] || txt === txt.toUpperCase() && txt.length > 2 && !/[a-zà-öø-ÿ]/.test(txt) && /[A-ZÀ-Þ]/.test(txt);
+              return new TableCell({
+                shading: rowItems === nonEmptyRows[0] ? { type: ShadingType.CLEAR, fill: "F2F2F7" } : undefined,
+                verticalAlign: VerticalAlign.CENTER,
+                children: [new Paragraph({
+                  alignment: isHeader ? AlignmentType.CENTER : AlignmentType.LEFT,
+                  spacing: { before: 30, after: 30 },
+                  children: [new TextRun({
+                    text: txt,
+                    font: "Arial",
+                    size: 18,
+                    bold: isHeader || (best.font.bold),
+                  })],
+                })],
+              });
+            } else {
+              // Empty cell
+              return new TableCell({
+                children: [new Paragraph({ children: [] })],
+              });
+            }
+          });
+          return new TableRow({ children: cells });
+        });
+        
+        children.push(new Table({
+          layout: TableLayoutType.AUTOFIT,
+          rows: tableRows,
+          width: { size: 100, type: WidthType.PERCENTAGE },
+        }));
+      } else {
+        // Normal paragraphs
+        const ordered = [...textItems].sort((a, b) => b.y - a.y || a.x - b.x);
+        for (const item of ordered) {
+          children.push(makeTextParagraphFromItems([item]));
+        }
+      }
+    }
+    
     for (const item of page.images) {
       const data = assets.get(item.source);
       if (data) children.push(imageParagraph(item, data));
@@ -188,7 +319,7 @@ function layoutSections(pages: LayoutPage[], assets: Map<string, Uint8Array>) {
       properties: {
         page: {
           size: { width: twips(page.width), height: twips(page.height), orientation: page.width > page.height ? PageOrientation.LANDSCAPE : PageOrientation.PORTRAIT },
-          margin: { top: 0, right: 0, bottom: 0, left: 0, header: 0, footer: 0, gutter: 0 },
+          margin: { top: 720, right: 720, bottom: 720, left: 720 },
         },
       },
       children,
@@ -245,7 +376,38 @@ export async function pdfToDocx(input: Uint8Array, originalName = "documento") {
   // Motor principal: Microsoft Word (abre o PDF e salva em DOCX preservando o layout nativamente).
   const viaWord = await pdfToDocxWithMsWord(input);
   if (viaWord) return viaWord;
-  // Reserva: reconstrução posicional a partir do layout extraído por pdftotext/pdtohtml.
+  // Reserva 2: LibreOffice / soffice (desativado temporariamente para testar renderizador posicional melhorado)
+  if (process.env.PDF_TO_WORD_USE_LIBREOFFICE === "1") {
+    const configured = process.env.PDF_TO_WORD_CONVERTER;
+    let converter = !configured || configured.toLowerCase() === "msword" ? (process.env.SOFFICE_CONVERTER || "soffice") : configured;
+    if (!(await commandExists(converter))) {
+      for (const c of ["soffice", "libreoffice", "/usr/bin/soffice", "/usr/bin/libreoffice", "/snap/bin/libreoffice"]) {
+        if (await commandExists(c)) { converter = c; break; }
+      }
+    }
+    if (await commandExists(converter)) {
+      const directory = await mkdtemp(path.join(os.tmpdir(), "pdfmaster-libre-docx-"));
+      const inputPath = path.join(directory, "input.pdf");
+      const profile = path.join(directory, "profile");
+      try {
+        await writeFile(inputPath, input);
+        await execFile(converter, [`-env:UserInstallation=${pathToFileURL(profile).href}`, "--headless", "--infilter=writer_pdf_import", "--convert-to", "docx:MS Word 2007 XML", "--outdir", directory, inputPath], { timeout: 300000 });
+        const entries = await readdir(directory);
+        const docxEntry = entries.find((name) => name.toLowerCase().endsWith(".docx"));
+        if (docxEntry) {
+          const bytes = await readFile(path.join(directory, docxEntry));
+          if (bytes.length > 1000) return new Uint8Array(bytes);
+        }
+        const docxEntry2 = entries.find((name) => name.toLowerCase().endsWith(".docx") && name !== "input.docx");
+        if (docxEntry2) {
+          const bytes = await readFile(path.join(directory, docxEntry2));
+          if (bytes.length > 1000) return new Uint8Array(bytes);
+        }
+      } catch { /* cai para o renderizador posicional */ }
+      finally { await rm(directory, { recursive: true, force: true }).catch(() => undefined); }
+    }
+  }
+  // Reserva 3: reconstrução posicional a partir do layout extraído por pdftotext/pdtohtml.
   const extractor = process.env.PDF_TEXT_EXTRACTOR || "pdftotext";
   const htmlConverter = process.env.PDF_HTML_CONVERTER || "pdftohtml";
   if (!(await commandExists(extractor))) throw new Error("O extrator de texto PDF não está configurado neste servidor.");

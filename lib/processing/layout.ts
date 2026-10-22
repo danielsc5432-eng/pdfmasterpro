@@ -218,7 +218,7 @@ function styleWords(words: BboxLine["words"], segments: LayoutSegment[], font: L
     .flatMap((segment) => [...segment.text].map((character) => ({ character, bold: segment.bold, italic: segment.italic })))
     .filter((entry) => !/\s/.test(entry.character));
   const expected = words.reduce((total, word) => total + word.text.length, 0);
-  const aligned = flat.length === expected;
+  const aligned = flat.length === expected && expected > 0;
   let pointer = 0;
   return words.map((word) => {
     const slice = aligned ? flat.slice(pointer, pointer + word.text.length) : [];
@@ -231,6 +231,59 @@ function styleWords(words: BboxLine["words"], segments: LayoutSegment[], font: L
       italic: aligned ? slice.some((entry) => entry.italic) : font.italic,
     };
   });
+}
+
+function detectColumns(lines: LayoutTextItem[], pageWidth: number): LayoutTextItem[][] {
+  // Detect multi-column layout
+  const midPoint = pageWidth / 2;
+  const leftCol = lines.filter(l => l.x + l.width < midPoint + 50).sort((a, b) => a.y - b.y);
+  const rightCol = lines.filter(l => l.x > midPoint - 50).sort((a, b) => a.y - b.y);
+  if (leftCol.length > 3 && rightCol.length > 3) {
+    // Interleave by vertical position roughly
+    const result: LayoutTextItem[] = [];
+    let li = 0, ri = 0;
+    while (li < leftCol.length || ri < rightCol.length) {
+      if (li < leftCol.length && (ri >= rightCol.length || leftCol[li].y <= rightCol[ri].y + 2)) {
+        result.push(leftCol[li++]);
+      } else if (ri < rightCol.length) {
+        result.push(rightCol[ri++]);
+      }
+    }
+    return [result];
+  }
+  return null;
+}
+
+function detectTable(lines: LayoutTextItem[]): { isTable: boolean; rows: LayoutTextItem[][] } {
+  // Group by similar Y positions (rows)
+  const yGroups = new Map<number, LayoutTextItem[]>();
+  for (const line of lines) {
+    let foundKey = -1;
+    for (const key of yGroups.keys()) {
+      if (Math.abs(key - line.y) < 3) { foundKey = key; break; }
+    }
+    if (foundKey >= 0) {
+      yGroups.get(foundKey)!.push(line);
+    } else {
+      yGroups.set(line.y, [line]);
+    }
+  }
+  
+  const sortedY = Array.from(yGroups.keys()).sort((a, b) => b - a); // top to bottom
+  const rows = sortedY.map(y => {
+    const row = yGroups.get(y)!;
+    return row.sort((a, b) => a.x - b.x);
+  }).filter(r => r.some(c => c.segments.some(s => s.text.trim())));
+  
+  // Check if it looks like a table (multiple rows, multiple columns, aligned)
+  if (rows.length >= 3) {
+    const colCounts = rows.map(r => r.length);
+    const avgCols = colCounts.reduce((a,b) => a+b, 0) / colCounts.length;
+    if (avgCols >= 2 && Math.max(...colCounts) - Math.min(...colCounts) <= 2) {
+      return { isTable: true, rows };
+    }
+  }
+  return { isTable: false, rows: [] };
 }
 
 export function joinLayoutPages(bboxPages: BboxPage[], htmlPages: HtmlPage[]): LayoutPage[] {
@@ -255,9 +308,11 @@ export function joinLayoutPages(bboxPages: BboxPage[], htmlPages: HtmlPage[]): L
       return { x: line.x, y: line.y, width: line.width, height: line.height, segments, words: styleWords(line.words, segments, font), font };
     });
 
+    // Don't merge across different columns too aggressively
     const merged: LayoutTextItem[] = [];
-    for (const item of texts) {
-      const existing = merged.find((candidate) => Math.abs(candidate.y - item.y) < 0.8);
+    const sorted = [...texts].sort((a, b) => a.y - b.y || a.x - b.x);
+    for (const item of sorted) {
+      const existing = merged.find((candidate) => Math.abs(candidate.y - item.y) < 1.2 && Math.abs(candidate.x - item.x) < 5);
       if (existing) {
         existing.words = [...existing.words, ...item.words].sort((a, b) => a.x - b.x);
         const combinedText = existing.words.map((word) => word.text).join(" ");
@@ -268,6 +323,9 @@ export function joinLayoutPages(bboxPages: BboxPage[], htmlPages: HtmlPage[]): L
       }
       merged.push({ ...item, words: [...item.words].sort((a, b) => a.x - b.x) });
     }
+    
+    // Sort by reading order
+    merged.sort((a, b) => b.y - a.y || a.x - b.x); // top to bottom
     return { width: page.width, height: page.height, texts: merged, images: html?.images ?? [] };
   });
 }
