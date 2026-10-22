@@ -233,7 +233,7 @@ function styleWords(words: BboxLine["words"], segments: LayoutSegment[], font: L
   });
 }
 
-function detectColumns(lines: LayoutTextItem[], pageWidth: number): LayoutTextItem[][] {
+function detectColumns(lines: LayoutTextItem[], pageWidth: number): LayoutTextItem[][] | null {
   // Detect multi-column layout
   const midPoint = pageWidth / 2;
   const leftCol = lines.filter(l => l.x + l.width < midPoint + 50).sort((a, b) => a.y - b.y);
