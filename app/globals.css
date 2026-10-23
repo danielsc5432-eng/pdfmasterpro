@@ -47,7 +47,9 @@ button { cursor: pointer; }
 .site-header { position: sticky; top: 0; z-index: 30; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(18px); }
 .header-inner { max-width: 1180px; margin: 0 auto; padding: 15px 24px; display: flex; align-items: center; gap: 22px; }
 .brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: -.03em; white-space: nowrap; }
-.brand-mark { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px 10px 10px 4px; background: linear-gradient(135deg, var(--primary), #f07b70); color: white; font-weight: 900; box-shadow: 5px 5px 0 rgba(91,91,214,.18); }
+.brand-mark { width: 40px; height: 34px; object-fit: contain; flex: 0 0 auto; }
+.footer .brand-mark { width: 34px; height: 29px; }
+:root.dark .brand-mark { filter: brightness(1.18) saturate(1.05); }
 .brand-name { font-size: 16px; }
 .desktop-nav { display: flex; align-items: center; gap: 18px; margin-left: auto; }
 .nav-link { color: var(--muted-strong); font-size: 14px; font-weight: 600; transition: color .18s ease; }
