@@ -238,26 +238,71 @@ function columnClusters(rows: LayoutRow[]): number[] {
 
 /** Uma linha é tabular quando tem 2+ células curtas e separadas horizontalmente. */
 function rowIsTabular(row: LayoutRow) {
-  const cells = row.items.filter((item) => itemText(item).length > 0);
+  const cells = row.items
+    .map((item) => ({ item, text: itemText(item) }))
+    .filter((entry) => entry.text.length > 0 && /[0-9A-Za-zÀ-ÿ]/.test(entry.text.replace(/_{2,}/g, "")));
   if (cells.length < 2) return false;
-  if (cells.some((item) => itemText(item).length > 90)) return false;
-  return cells[cells.length - 1].x - cells[0].x > 40;
+  if (cells.some((entry) => entry.text.length > 90)) return false;
+  const compact = cells.some((entry) => entry.text.replace(/\s+/g, "").length <= 16);
+  const numeric = cells.some((entry) => /[0-9]/.test(entry.text));
+  if (!compact && !numeric) return false;
+  return cells[cells.length - 1].item.x - cells[0].item.x > 40;
 }
 
-/** Detecta prosa em duas colunas (jornal/artigo) para não confundir com tabela. */
-function isTwoColumnProse(rows: LayoutRow[], pageWidth: number) {
-  if (rows.length < 6) return false;
-  const mid = pageWidth / 2;
-  let pairs = 0;
-  let longPairs = 0;
-  for (const row of rows) {
-    const cells = row.items.filter((item) => itemText(item).length > 0);
-    if (cells.length !== 2) continue;
-    pairs += 1;
-    const [first, second] = cells;
-    if (first.x < mid - 20 && second.x > mid + 20 && itemText(first).length > 35 && itemText(second).length > 35) longPairs += 1;
+/** Detecta regiões de prosa em 2 a 4 colunas (jornais, artigos, relatórios). */
+function detectProseColumns(items: LayoutTextItem[], pageWidth: number): LayoutTextItem[][] | null {
+  const prose = (item: LayoutTextItem) => itemText(item).length > 22 || item.width > pageWidth * 0.12;
+  const proseItems = items.filter(prose);
+  if (proseItems.length < 5) return null;
+  const bands: number[] = [];
+  for (const x of proseItems.map((item) => item.x).sort((a, b) => a - b)) {
+    const last = bands[bands.length - 1];
+    if (last === undefined || x - last > pageWidth * 0.04) bands.push(x);
   }
-  return pairs >= rows.length * 0.55 && longPairs >= pairs * 0.6;
+  if (bands.length < 2 || bands.length > 4) return null;
+  for (let index = 1; index < bands.length; index += 1) {
+    if (bands[index] - bands[index - 1] < pageWidth * 0.12) return null;
+  }
+  const groups: LayoutTextItem[][] = bands.map(() => []);
+  for (const item of items) {
+    let bestIndex = 0;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    bands.forEach((x, index) => {
+      const distance = Math.abs(item.x - x);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestIndex = index;
+      }
+    });
+    groups[bestIndex].push(item);
+  }
+  if (groups.some((group) => group.filter(prose).length < 3)) return null;
+  return groups.map((group) => group.sort((a, b) => a.y - b.y || a.x - b.x));
+}
+
+/** Blocos consecutivos de linhas tabulares que formam tabelas válidas. */
+function findTableBlocks(rows: LayoutRow[]) {
+  const blocks: { start: number; end: number }[] = [];
+  let index = 0;
+  while (index < rows.length) {
+    if (rowIsTabular(rows[index])) {
+      let end = index;
+      while (end < rows.length && rowIsTabular(rows[end])) end += 1;
+      const columns = columnClusters(rows.slice(index, end));
+      if (end - index >= 3 && columns.length >= 2 && columns.length <= 16) {
+        // Evita transformar prosa (jornais, artigos) em tabela: tabelas reais
+        // têm células curtas ou com números na maior parte das linhas.
+        const cells = rows.slice(index, end).flatMap((row) => row.items).map(itemText);
+        const compactCells = cells.filter((text) => text.replace(/\s+/g, "").length <= 16).length;
+        const numericCells = cells.filter((text) => /[0-9]/.test(text)).length;
+        if (compactCells >= cells.length * 0.35 || numericCells >= cells.length * 0.35) blocks.push({ start: index, end });
+      }
+      index = end;
+    } else {
+      index += 1;
+    }
+  }
+  return blocks;
 }
 
 /** Junta itens da mesma linha em um único parágrafo, preservando formatação. */
@@ -280,8 +325,8 @@ function rowParagraph(row: LayoutRow): Paragraph {
 function mergedParagraphs(items: LayoutTextItem[]): Paragraph[] {
   const output: Paragraph[] = [];
   let buffer: LayoutTextItem[] = [];
-  const widths = items.map((item) => item.width).filter((width) => width > 0);
-  const median = widths.length ? widths.sort((a, b) => a - b)[Math.floor(widths.length / 2)] : 0;
+  const sizes = items.map((item) => item.font.size || 10).sort((a, b) => a - b);
+  const medianSize = sizes.length ? sizes[Math.floor(sizes.length / 2)] : 10;
   const flush = () => {
     if (!buffer.length) return;
     const children: TextRun[] = [];
@@ -292,10 +337,25 @@ function mergedParagraphs(items: LayoutTextItem[]): Paragraph[] {
     output.push(new Paragraph({ spacing: { before: 30, after: 30 }, children }));
     buffer = [];
   };
-  for (const item of items) {
+  for (let index = 0; index < items.length; index += 1) {
+    const item = items[index];
+    const currentText = itemText(item);
+    const isListItem = /^([-*•·◦▪]|\(?[0-9]{1,3}(?:\.[0-9]{1,3})*[.)]|[a-z][.)])\s+/i.test(currentText);
+    if (isListItem) {
+      flush();
+      buffer.push(item);
+      flush();
+      continue;
+    }
+    const previous = buffer[buffer.length - 1];
+    if (previous) {
+      const sizeChange = Math.abs((previous.font.size || 10) - (item.font.size || 10)) > 1.5;
+      const smallPrint = (previous.font.size || 10) < medianSize * 0.8;
+      const previousText = itemText(previous);
+      const continues = !/[.!?…:;]$/.test(previousText) && !/[_]{3,}/.test(previousText) && (/^[a-zà-öø-ÿ(«"“']/u.test(currentText) || /[,\-–—/]$/.test(previousText));
+      if (sizeChange || smallPrint || !continues) flush();
+    }
     buffer.push(item);
-    const text = itemText(item);
-    if (/[.!?…:]$/.test(text) || (median > 0 && item.width > 0 && item.width < median * 0.55)) flush();
   }
   flush();
   return output;
@@ -370,30 +430,88 @@ function layoutSections(pages: LayoutPage[], assets: Map<string, Uint8Array>) {
     }
 
     const rows = groupLayoutRows(textItems);
+    const blocks = findTableBlocks(rows);
+    const blockItems = new Set(blocks.flatMap((block) => rows.slice(block.start, block.end).flatMap((row) => row.items)));
+    const freeItems = textItems.filter((item) => !blockItems.has(item));
+    const proseColumns = detectProseColumns(freeItems, page.width);
 
-    if (isTwoColumnProse(rows, page.width)) {
-      const mid = page.width / 2;
-      const left = textItems.filter((item) => item.x < mid).sort((a, b) => a.y - b.y || a.x - b.x);
-      const right = textItems.filter((item) => item.x >= mid).sort((a, b) => a.y - b.y || a.x - b.x);
-      children.push(...mergedParagraphs(left));
-      children.push(...mergedParagraphs(right));
-    } else {
-      let index = 0;
-      while (index < rows.length) {
-        if (rowIsTabular(rows[index])) {
-          let end = index;
-          while (end < rows.length && rowIsTabular(rows[end])) end += 1;
-          const block = rows.slice(index, end);
-          const columns = columnClusters(block);
-          if (block.length >= 2 && columns.length >= 2 && columns.length <= 16) {
-            children.push(buildTable(block));
-            index = end;
-            continue;
+    if (proseColumns) {
+      // Separa cada coluna em blocos verticais (título, corpo, legendas/rodapé)
+      // para preservar a ordem de leitura correta da página.
+      type Segment = { items: LayoutTextItem[]; top: number; bottom: number };
+      const segments: Segment[] = [];
+      for (const column of proseColumns) {
+        const heights = column.map((item) => item.height || item.font.size || 10).sort((a, b) => a - b);
+        const lineHeight = heights[Math.floor(heights.length / 2)] || 10;
+        let current: Segment | null = null;
+        for (const item of column) {
+          const top = item.y;
+          const bottom = item.y + (item.height || item.font.size || 10);
+          if (current && top - current.bottom > lineHeight * 1.8) {
+            segments.push(current);
+            current = null;
+          }
+          if (current) {
+            current.items.push(item);
+            current.bottom = Math.max(current.bottom, bottom);
+          } else {
+            current = { items: [item], top, bottom };
           }
         }
-        children.push(rowParagraph(rows[index]));
+        if (current) segments.push(current);
+      }
+      const mainByColumn = proseColumns.map(() => -1);
+      segments.forEach((segment, segmentIndex) => {
+        const columnIndex = proseColumns.findIndex((column) => column.includes(segment.items[0]));
+        if (columnIndex >= 0 && (mainByColumn[columnIndex] < 0 || segment.items.length > segments[mainByColumn[columnIndex]].items.length)) {
+          mainByColumn[columnIndex] = segmentIndex;
+        }
+      });
+      const mains = mainByColumn.filter((index) => index >= 0).map((index) => segments[index]);
+      const extras = segments.filter((_, index) => !mainByColumn.includes(index));
+      if (mains.length) {
+        const mainTop = Math.min(...mains.map((segment) => segment.top));
+        const mainBottom = Math.max(...mains.map((segment) => segment.bottom));
+        for (const segment of extras.filter((entry) => entry.bottom <= mainTop).sort((a, b) => a.top - b.top)) {
+          children.push(...mergedParagraphs(segment.items));
+        }
+        for (const segment of mains) children.push(...mergedParagraphs(segment.items));
+        for (const segment of extras.filter((entry) => entry.top >= mainBottom).sort((a, b) => a.top - b.top)) {
+          children.push(...mergedParagraphs(segment.items));
+        }
+        for (const segment of extras.filter((entry) => entry.bottom > mainTop && entry.top < mainBottom).sort((a, b) => a.top - b.top)) {
+          children.push(...mergedParagraphs(segment.items));
+        }
+      } else {
+        for (const column of proseColumns) children.push(...mergedParagraphs(column));
+      }
+      for (const block of blocks) children.push(buildTable(rows.slice(block.start, block.end)));
+    } else {
+      let buffer: LayoutTextItem[] = [];
+      const flushBuffer = () => {
+        if (!buffer.length) return;
+        children.push(...mergedParagraphs(buffer));
+        buffer = [];
+      };
+      let index = 0;
+      while (index < rows.length) {
+        const block = blocks.find((entry) => entry.start === index);
+        if (block) {
+          flushBuffer();
+          children.push(buildTable(rows.slice(block.start, block.end)));
+          index = block.end;
+          continue;
+        }
+        const row = rows[index];
+        if (row.items.length === 1) {
+          buffer.push(row.items[0]);
+        } else {
+          flushBuffer();
+          children.push(rowParagraph(row));
+        }
         index += 1;
       }
+      flushBuffer();
     }
 
     for (const item of page.images) {
@@ -460,7 +578,7 @@ async function injectVmlIntoDocx(docx: Uint8Array, vectors: PdfVectorPage[]): Pr
 
 export async function pdfToDocx(input: Uint8Array, originalName = "documento") {
   // Motor principal: Microsoft Word (abre o PDF e salva em DOCX preservando o layout nativamente).
-  const viaWord = await pdfToDocxWithMsWord(input);
+  const viaWord = process.env.PDF_TO_WORD_DISABLE_MSWORD === "1" ? null : await pdfToDocxWithMsWord(input);
   if (viaWord) return viaWord;
   // Reserva 2: LibreOffice / soffice (desativado temporariamente para testar renderizador posicional melhorado)
   if (process.env.PDF_TO_WORD_USE_LIBREOFFICE === "1") {
