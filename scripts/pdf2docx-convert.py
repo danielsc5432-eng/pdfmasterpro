@@ -1,10 +1,28 @@
 """Isolated native PDF -> structural DOCX conversion; no network access."""
 import argparse
 import logging
+import json
+import re
 from pathlib import Path
 
 import fitz  # PyMuPDF
 from pdf2docx import Converter
+
+
+def analyze(source: str) -> dict:
+    with fitz.open(source) as document:
+        if document.needs_pass:
+            raise ValueError("PDF protegido por senha.")
+        for page in document:
+            text = page.get_text()
+            if len(page.get_text("words")) < 8 and any(
+                fitz.Rect(image["bbox"]).get_area() >= page.rect.get_area() * 0.5
+                for image in page.get_image_info()
+            ):
+                return {"mode": "layout", "reason": "scan"}
+            if re.search(r"\b(?:CPF|CNPJ|MATR[IÍ]CULA|ASSINATURA|DECLARA[CÇ][AÃ]O)\b", text, re.I):
+                return {"mode": "layout", "reason": "form"}
+    return {"mode": "tables", "reason": "native"}
 
 
 def convert(source: str, destination: str) -> None:
@@ -30,6 +48,12 @@ if __name__ == "__main__":
     logging.getLogger().setLevel(logging.WARNING)
     parser = argparse.ArgumentParser()
     parser.add_argument("source")
-    parser.add_argument("destination")
+    parser.add_argument("destination", nargs="?")
+    parser.add_argument("--analyze", action="store_true")
     args = parser.parse_args()
-    convert(args.source, args.destination)
+    if args.analyze:
+        print(json.dumps(analyze(args.source)))
+    elif args.destination:
+        convert(args.source, args.destination)
+    else:
+        parser.error("destination is required")
