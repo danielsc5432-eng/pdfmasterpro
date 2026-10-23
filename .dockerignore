@@ -6,3 +6,6 @@ node_modules
 .env.*
 *.tsbuildinfo
 *.log
+__pycache__
+*.pyc
+.venv

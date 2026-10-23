@@ -17,7 +17,10 @@ ENV NODE_ENV=production
 ENV PORT=3000
 ENV PDF_RENDERER=pdftoppm
 ENV PDF_COMPRESSOR=gs
-RUN apt-get update && apt-get install -y --no-install-recommends poppler-utils ghostscript qpdf tesseract-ocr tesseract-ocr-por tesseract-ocr-eng fontconfig fonts-liberation libreoffice-writer && rm -rf /var/lib/apt/lists/*
+ENV PDF_TO_WORD_PYTHON=/opt/pdf2docx/bin/python
+RUN apt-get update && apt-get install -y --no-install-recommends poppler-utils ghostscript qpdf tesseract-ocr tesseract-ocr-por tesseract-ocr-eng fontconfig fonts-liberation libreoffice-writer python3 python3-venv libgomp1 && rm -rf /var/lib/apt/lists/*
+COPY requirements-pdf2docx.txt /tmp/requirements-pdf2docx.txt
+RUN python3 -m venv /opt/pdf2docx && /opt/pdf2docx/bin/pip install --no-cache-dir -r /tmp/requirements-pdf2docx.txt
 RUN corepack enable
 COPY --from=builder /app ./
 EXPOSE 3000
