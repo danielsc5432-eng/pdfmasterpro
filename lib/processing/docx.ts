@@ -169,147 +169,233 @@ function imageParagraph(item: LayoutImageItem, data: Uint8Array) {
   });
 }
 
-function getCellText(item: LayoutTextItem) {
-  const parts = item.segments.filter(s => s.text).map(s => s.text);
-  return parts.join("");
+function itemText(item: LayoutTextItem) {
+  return item.segments.map((segment) => segment.text).join("").replace(/\s+/g, " ").trim();
 }
 
-function makeTextParagraphFromItems(items: LayoutTextItem[]) {
-  if (items.length === 0) return new Paragraph({ children: [] });
-  const item = items[0];
-  const color = item.font.color.replace("#", "").toUpperCase();
-  const regular = /^[0-9A-F]{6}$/.test(color) ? color : "000000";
-  const run = (text: string, bold: boolean, italic: boolean, font = item.font) => new TextRun({
-    text,
+function hexColor(value: string | undefined, fallback = "000000") {
+  const hex = String(value ?? "").replace("#", "").toUpperCase();
+  return /^[0-9A-F]{6}$/.test(hex) ? hex : fallback;
+}
+
+function itemRuns(item: LayoutTextItem, bold = false): TextRun[] {
+  const font = item.font;
+  const size = Math.max(2, Math.round((font.size || 10) * 2));
+  const color = hexColor(font.color);
+  const segments = item.segments.filter((segment) => segment.text);
+  if (!segments.length) {
+    const text = itemText(item);
+    return text ? [new TextRun({ text, font: font.family || "Arial", size, bold: bold || font.bold, italics: font.italic, color })] : [];
+  }
+  return segments.map((segment) => new TextRun({
+    text: segment.text,
     font: font.family || "Arial",
-    size: Math.max(2, Math.round((font.size || 10) * 2)),
-    bold: bold || font.bold,
-    italics: italic || font.italic,
-    color: (() => { const c = (font.color || "#000000").replace("#", "").toUpperCase(); return /^[0-9A-F]{6}$/.test(c) ? c : "000000"; })(),
-  });
-  const children: TextRun[] = [];
-  if (items.length > 1) {
-    items.forEach((line, lineIndex) => {
-      if (lineIndex > 0) children.push(new TextRun({ break: 1, text: "" }));
-      for (const segment of line.segments.filter((segment) => segment.text)) {
-        children.push(new TextRun({
-          text: segment.text,
-          font: line.font.family || "Arial",
-          size: Math.max(2, Math.round((line.font.size || 10) * 2)),
-          bold: segment.bold || line.font.bold,
-          italics: segment.italic || line.font.italic,
-          color: (() => { const c = (line.font.color || "#000000").replace("#", "").toUpperCase(); return /^[0-9A-F]{6}$/.test(c) ? c : "000000"; })(),
-        }));
-      }
+    size,
+    bold: bold || segment.bold || font.bold,
+    italics: segment.italic || font.italic,
+    color,
+  }));
+}
+
+type LayoutRow = { top: number; bottom: number; items: LayoutTextItem[] };
+
+/** Agrupa itens de texto em linhas usando sobreposição vertical (robusto a diferenças de fonte). */
+function groupLayoutRows(items: LayoutTextItem[]): LayoutRow[] {
+  const sorted = [...items].sort((a, b) => a.y - b.y);
+  const rows: LayoutRow[] = [];
+  for (const item of sorted) {
+    const height = Math.max(2, item.height || item.font.size || 10);
+    const top = item.y;
+    const bottom = item.y + height;
+    const match = rows.find((row) => {
+      const overlap = Math.min(bottom, row.bottom) - Math.max(top, row.top);
+      const smallest = Math.min(height, row.bottom - row.top);
+      return overlap > smallest * 0.4;
     });
-  } else {
-    for (const segment of item.segments.filter((segment) => segment.text)) {
-      children.push(run(segment.text, segment.bold, segment.italic));
+    if (match) {
+      match.items.push(item);
+      match.top = Math.min(match.top, top);
+      match.bottom = Math.max(match.bottom, bottom);
+    } else {
+      rows.push({ top, bottom, items: [item] });
     }
   }
+  rows.sort((a, b) => a.top - b.top);
+  for (const row of rows) row.items.sort((a, b) => a.x - b.x);
+  return rows.filter((row) => row.items.some((item) => itemText(item).length > 0));
+}
+
+/** Agrupa posições X em colunas (tolerância proporcional ao corpo do texto). */
+function columnClusters(rows: LayoutRow[]): number[] {
+  const xs = rows.flatMap((row) => row.items.map((item) => item.x)).sort((a, b) => a - b);
+  const clusters: number[] = [];
+  for (const x of xs) {
+    const last = clusters[clusters.length - 1];
+    if (last === undefined || x - last > 18) clusters.push(x);
+  }
+  return clusters;
+}
+
+/** Uma linha é tabular quando tem 2+ células curtas e separadas horizontalmente. */
+function rowIsTabular(row: LayoutRow) {
+  const cells = row.items.filter((item) => itemText(item).length > 0);
+  if (cells.length < 2) return false;
+  if (cells.some((item) => itemText(item).length > 90)) return false;
+  return cells[cells.length - 1].x - cells[0].x > 40;
+}
+
+/** Detecta prosa em duas colunas (jornal/artigo) para não confundir com tabela. */
+function isTwoColumnProse(rows: LayoutRow[], pageWidth: number) {
+  if (rows.length < 6) return false;
+  const mid = pageWidth / 2;
+  let pairs = 0;
+  let longPairs = 0;
+  for (const row of rows) {
+    const cells = row.items.filter((item) => itemText(item).length > 0);
+    if (cells.length !== 2) continue;
+    pairs += 1;
+    const [first, second] = cells;
+    if (first.x < mid - 20 && second.x > mid + 20 && itemText(first).length > 35 && itemText(second).length > 35) longPairs += 1;
+  }
+  return pairs >= rows.length * 0.55 && longPairs >= pairs * 0.6;
+}
+
+/** Junta itens da mesma linha em um único parágrafo, preservando formatação. */
+function rowParagraph(row: LayoutRow): Paragraph {
+  const children: TextRun[] = [];
+  row.items.forEach((item, index) => {
+    const text = itemText(item);
+    if (!text) return;
+    if (children.length) children.push(new TextRun({ text: index > 0 ? "  " : " ", font: item.font.family || "Arial", size: Math.max(2, Math.round((item.font.size || 10) * 2)) }));
+    children.push(...itemRuns(item));
+  });
+  const first = row.items[0];
   return new Paragraph({
-    spacing: { before: 40, after: 40 },
-    children: children.length ? children : [new TextRun({ text: getCellText(items[0]) || "" })],
+    spacing: { before: 20, after: 20, line: Math.max(200, Math.round((first?.font.size || 10) * 1.35 * 20)) },
+    children: children.length ? children : [new TextRun({ text: "" })],
+  });
+}
+
+/** Junta várias linhas de uma coluna em parágrafos contínuos (reflow no Word). */
+function mergedParagraphs(items: LayoutTextItem[]): Paragraph[] {
+  const output: Paragraph[] = [];
+  let buffer: LayoutTextItem[] = [];
+  const widths = items.map((item) => item.width).filter((width) => width > 0);
+  const median = widths.length ? widths.sort((a, b) => a - b)[Math.floor(widths.length / 2)] : 0;
+  const flush = () => {
+    if (!buffer.length) return;
+    const children: TextRun[] = [];
+    for (const item of buffer) {
+      if (children.length) children.push(new TextRun({ text: " " }));
+      children.push(...itemRuns(item));
+    }
+    output.push(new Paragraph({ spacing: { before: 30, after: 30 }, children }));
+    buffer = [];
+  };
+  for (const item of items) {
+    buffer.push(item);
+    const text = itemText(item);
+    if (/[.!?…:]$/.test(text) || (median > 0 && item.width > 0 && item.width < median * 0.55)) flush();
+  }
+  flush();
+  return output;
+}
+
+/** Converte um bloco de linhas tabulares em uma tabela real do Word. */
+function buildTable(block: LayoutRow[]): Table {
+  const clusters = columnClusters(block);
+  const rows = block.map((row, rowIndex) => {
+    const buckets: LayoutTextItem[][] = clusters.map(() => []);
+    for (const item of row.items) {
+      if (!itemText(item)) continue;
+      let bestIndex = 0;
+      let bestDistance = Number.POSITIVE_INFINITY;
+      clusters.forEach((x, index) => {
+        const distance = Math.abs(item.x - x);
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          bestIndex = index;
+        }
+      });
+      buckets[bestIndex].push(item);
+    }
+    const header = rowIndex === 0;
+    const cells = buckets.map((items) => {
+      const sorted = [...items].sort((a, b) => a.x - b.x);
+      const children: TextRun[] = [];
+      sorted.forEach((item) => {
+        if (children.length) children.push(new TextRun({ text: " " }));
+        children.push(...itemRuns(item, header));
+      });
+      return new TableCell({
+        shading: header ? { type: ShadingType.CLEAR, fill: "F2F3F7", color: "auto" } : undefined,
+        verticalAlign: VerticalAlign.CENTER,
+        margins: { top: 40, bottom: 40, left: 80, right: 80 },
+        children: [new Paragraph({ spacing: { before: 20, after: 20 }, children: children.length ? children : [new TextRun({ text: "" })] })],
+      });
+    });
+    return new TableRow({ children: cells, tableHeader: header });
+  });
+
+  return new Table({
+    rows,
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    layout: TableLayoutType.AUTOFIT,
+    borders: {
+      top: { style: BorderStyle.SINGLE, size: 4, color: "D6D6DE" },
+      bottom: { style: BorderStyle.SINGLE, size: 4, color: "D6D6DE" },
+      left: { style: BorderStyle.SINGLE, size: 4, color: "D6D6DE" },
+      right: { style: BorderStyle.SINGLE, size: 4, color: "D6D6DE" },
+      insideHorizontal: { style: BorderStyle.SINGLE, size: 4, color: "E3E3EA" },
+      insideVertical: { style: BorderStyle.SINGLE, size: 4, color: "E3E3EA" },
+    },
   });
 }
 
 function layoutSections(pages: LayoutPage[], assets: Map<string, Uint8Array>) {
   return pages.map((page) => {
     const children: (Paragraph | Table)[] = [];
-    const textItems = page.texts.filter((item) => item.segments.some((segment) => segment.text.trim()));
+    const textItems = page.texts.filter((item) => itemText(item).length > 0);
     if (!textItems.length && !page.images.length) {
       children.push(new Paragraph({ children: [] }));
-      return { properties: { page: { size: { width: twips(page.width), height: twips(page.height), orientation: page.width > page.height ? PageOrientation.LANDSCAPE : PageOrientation.PORTRAIT }, margin: { top: 720, right: 720, bottom: 720, left: 720 } } }, children };
+      return {
+        properties: {
+          page: {
+            size: { width: twips(page.width), height: twips(page.height), orientation: page.width > page.height ? PageOrientation.LANDSCAPE : PageOrientation.PORTRAIT },
+            margin: { top: 720, right: 720, bottom: 720, left: 720 },
+          },
+        },
+        children,
+      };
     }
 
-    // Detect two-column layout
-    const mid = page.width / 2;
-    const left = textItems.filter(t => t.x < mid - 30).sort((a,b) => b.y - a.y || a.x - b.x);
-    const right = textItems.filter(t => t.x > mid + 30).sort((a,b) => b.y - a.y || a.x - b.x);
-    const hasTwoCols = left.length >= 3 && right.length >= 3;
+    const rows = groupLayoutRows(textItems);
 
-    if (hasTwoCols) {
-      // Render as simple paragraphs in reading order (left then right)
-      const ordered = [...left, ...right].sort((a,b) => b.y - a.y || a.x - b.x);
-      for (const item of ordered) {
-        children.push(makeTextParagraphFromItems([item]));
-      }
+    if (isTwoColumnProse(rows, page.width)) {
+      const mid = page.width / 2;
+      const left = textItems.filter((item) => item.x < mid).sort((a, b) => a.y - b.y || a.x - b.x);
+      const right = textItems.filter((item) => item.x >= mid).sort((a, b) => a.y - b.y || a.x - b.x);
+      children.push(...mergedParagraphs(left));
+      children.push(...mergedParagraphs(right));
     } else {
-      // Detect tables by Y-groups and X-clusters
-      const yMap = new Map<number, LayoutTextItem[]>();
-      for (const item of textItems) {
-        let key = -1;
-        for (const k of yMap.keys()) if (Math.abs(k - item.y) < 5) { key = k; break; }
-        if (key >= 0) yMap.get(key)!.push(item); else yMap.set(item.y, [item]);
-      }
-      const sortedY = Array.from(yMap.keys()).sort((a,b) => b - a);
-      const rows = sortedY.map(y => (yMap.get(y) || []).sort((a,b) => a.x - b.x));
-      const nonEmptyRows = rows.filter(r => r.length > 0 && r.some(c => getCellText(c).trim()));
-      
-      // Collect column X positions
-      const allX: number[] = [];
-      for (const r of nonEmptyRows) for (const c of r) allX.push(c.x);
-      const clusters: number[] = [];
-      for (const x of [...allX].sort((a,b)=>a-b)) {
-        if (clusters.length === 0 || x - clusters[clusters.length-1] > 8) clusters.push(x);
-      }
-      
-      const isTable = clusters.length >= 2 && nonEmptyRows.length >= 2;
-      
-      if (isTable && clusters.length <= 12) {
-        // Build table
-        const tableRows = nonEmptyRows.map(rowItems => {
-          // Map items to columns
-          const cells = clusters.map((cx, ci) => {
-            // Find item closest to this cluster
-            let best: LayoutTextItem | null = null;
-            let bestDist = 9999;
-            for (const it of rowItems) {
-              const d = Math.abs(it.x - cx);
-              if (d < bestDist) { bestDist = d; best = it; }
-            }
-            // Also check if item spans columns
-            if (best && bestDist < 40) {
-              const txt = getCellText(best);
-              const isHeader = rowItems === nonEmptyRows[0] || txt === txt.toUpperCase() && txt.length > 2 && !/[a-zà-öø-ÿ]/.test(txt) && /[A-ZÀ-Þ]/.test(txt);
-              return new TableCell({
-                shading: rowItems === nonEmptyRows[0] ? { type: ShadingType.CLEAR, fill: "F2F2F7" } : undefined,
-                verticalAlign: VerticalAlign.CENTER,
-                children: [new Paragraph({
-                  alignment: isHeader ? AlignmentType.CENTER : AlignmentType.LEFT,
-                  spacing: { before: 30, after: 30 },
-                  children: [new TextRun({
-                    text: txt,
-                    font: "Arial",
-                    size: 18,
-                    bold: isHeader || (best.font.bold),
-                  })],
-                })],
-              });
-            } else {
-              // Empty cell
-              return new TableCell({
-                children: [new Paragraph({ children: [] })],
-              });
-            }
-          });
-          return new TableRow({ children: cells });
-        });
-        
-        children.push(new Table({
-          layout: TableLayoutType.AUTOFIT,
-          rows: tableRows,
-          width: { size: 100, type: WidthType.PERCENTAGE },
-        }));
-      } else {
-        // Normal paragraphs
-        const ordered = [...textItems].sort((a, b) => b.y - a.y || a.x - b.x);
-        for (const item of ordered) {
-          children.push(makeTextParagraphFromItems([item]));
+      let index = 0;
+      while (index < rows.length) {
+        if (rowIsTabular(rows[index])) {
+          let end = index;
+          while (end < rows.length && rowIsTabular(rows[end])) end += 1;
+          const block = rows.slice(index, end);
+          const columns = columnClusters(block);
+          if (block.length >= 2 && columns.length >= 2 && columns.length <= 16) {
+            children.push(buildTable(block));
+            index = end;
+            continue;
+          }
         }
+        children.push(rowParagraph(rows[index]));
+        index += 1;
       }
     }
-    
+
     for (const item of page.images) {
       const data = assets.get(item.source);
       if (data) children.push(imageParagraph(item, data));
