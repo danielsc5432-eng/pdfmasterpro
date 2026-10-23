@@ -552,6 +552,26 @@ async function loadAsset(image: LayoutImageItem, directory: string, assets: Map<
   }
 }
 
+/** Número de páginas via pdfinfo (0 quando indisponível). */
+async function pdfPageCount(inputPath: string) {
+  try {
+    const { stdout } = await execFile("pdfinfo", [inputPath], { timeout: 30000, maxBuffer: 4 * 1024 * 1024 });
+    const match = /^Pages:\s+(\d+)/m.exec(stdout);
+    return match ? Number(match[1]) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** Verifica rapidamente se o PDF tem imagens raster antes de renderizar páginas. */async function pdfHasRasterImages(inputPath: string) {
+  try {
+    const { stdout } = await execFile("pdfimages", ["-list", inputPath], { timeout: 60000, maxBuffer: 8 * 1024 * 1024 });
+    return stdout.split(/\r?\n/).some((line) => /^\s*\d+\s+\d+\s+image\b/.test(line));
+  } catch {
+    return true; // sem pdfimages: mantém o comportamento anterior
+  }
+}
+
 async function readPageImages(directory: string, prefix: string, inputPath: string, converter: string) {
   if (!(await commandExists(converter))) return "";
   try {
@@ -623,9 +643,23 @@ export async function pdfToDocx(input: Uint8Array, originalName = "documento") {
     await writeFile(inputPath, input);
     let pages: LayoutPage[] = [];
     try {
-      await execFile(extractor, ["-bbox-layout", "-enc", "UTF-8", inputPath, layoutPath], { timeout: 180000, maxBuffer: 96 * 1024 * 1024 });
-      const xml = await readFile(layoutPath, "utf8");
-      const htmlXml = await readPageImages(directory, path.join(directory, "html"), inputPath, htmlConverter);
+      const pageCount = await pdfPageCount(inputPath);
+      const maxImagePages = Number(process.env.PDF_TO_WORD_MAX_IMAGE_PAGES || 90);
+      const renderImages = pageCount === 0 || pageCount <= maxImagePages;
+      // pdftotext e a extração de imagens são independentes: rodam em paralelo.
+      const [xml, htmlXml] = await Promise.all([
+        (async () => {
+          await execFile(extractor, ["-bbox-layout", "-enc", "UTF-8", inputPath, layoutPath], { timeout: 180000, maxBuffer: 96 * 1024 * 1024 });
+          return readFile(layoutPath, "utf8");
+        })(),
+        (async () => {
+          if (!renderImages) return "";
+          // Só renderiza as páginas com pdftohtml quando existem imagens raster:
+          // em documentos só de texto isso economiza tempo e memória.
+          if (!(await pdfHasRasterImages(inputPath))) return "";
+          return readPageImages(directory, path.join(directory, "html"), inputPath, htmlConverter);
+        })(),
+      ]);
       pages = parseLayout(xml, htmlXml);
     } catch {
       pages = [];
@@ -636,7 +670,10 @@ export async function pdfToDocx(input: Uint8Array, originalName = "documento") {
     const hasText = pages.some((page) => page.texts.some((item) => item.segments.some((segment) => segment.text.trim())));
     if (pages.length && (hasText || assets.size)) {
       // Extrai vetores (linhas/retângulos) do PDF para desenhar bordas e grades.
-      const vectors = await extractPdfVectors(input);
+      // Em documentos muito grandes pulamos essa etapa (cara em CPU) para não
+      // estourar o tempo limite do servidor: as tabelas já têm bordas próprias.
+      const maxVectorPages = Number(process.env.PDF_TO_WORD_MAX_VECTOR_PAGES || 40);
+      const vectors = pages.length <= maxVectorPages ? await extractPdfVectors(input) : [];
       const document = new Document({
         creator: "PDF Master Pro",
         title: originalName,
