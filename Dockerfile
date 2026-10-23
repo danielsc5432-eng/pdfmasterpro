@@ -17,7 +17,7 @@ ENV NODE_ENV=production
 ENV PORT=3000
 ENV PDF_RENDERER=pdftoppm
 ENV PDF_COMPRESSOR=gs
-RUN apt-get update && apt-get install -y --no-install-recommends poppler-utils ghostscript qpdf tesseract-ocr tesseract-ocr-por libreoffice-writer && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends poppler-utils ghostscript qpdf tesseract-ocr tesseract-ocr-por tesseract-ocr-eng fontconfig fonts-liberation libreoffice-writer && rm -rf /var/lib/apt/lists/*
 RUN corepack enable
 COPY --from=builder /app ./
 EXPOSE 3000

@@ -10,6 +10,7 @@ import { commandExists, execFile } from "./system";
 import { extractPdfVectors } from "./vector";
 import { renderDocxArtwork, renderOriginalArtwork } from "./docx-artwork";
 import { extractionPdf } from "./pdf-visible-text";
+import { recognizeScannedPages } from "./docx-ocr";
 
 export type DocxParagraph = { text: string; pageBreakBefore: boolean; heading: boolean };
 
@@ -276,7 +277,7 @@ export async function mergeDocxBodies(chunks: Uint8Array[]): Promise<Uint8Array<
   return new Uint8Array(out);
 }
 
-export async function pdfToDocx(input: Uint8Array, originalName = "documento") {
+export async function pdfToDocx(input: Uint8Array, originalName = "documento", ocrLanguage = "por+eng") {
   // Layout reconstruction is deterministic across Windows and Linux. Native Word
   // reflow is an explicit opt-in, since it moves table/form content unpredictably.
   if (process.env.PDF_TO_WORD_NATIVE_REFLOW === "1") {
@@ -347,6 +348,7 @@ export async function pdfToDocx(input: Uint8Array, originalName = "documento") {
       pages = [];
     }
 
+    const scannedArtwork = await recognizeScannedPages(pages, inputPath, directory, ocrLanguage);
     const assets = new Map<string, Uint8Array>();
     for (const page of pages) for (const image of page.images) await loadAsset(image, directory, assets);
     const hasText = pages.some((page) => page.texts.some((item) => item.segments.some((segment) => segment.text.trim())));
@@ -358,12 +360,13 @@ export async function pdfToDocx(input: Uint8Array, originalName = "documento") {
       const originalArtwork = pages.length <= maxVectorPages ? await renderOriginalArtwork(inputPath, pages.length, directory) : null;
       const vectors = !originalArtwork && pages.length <= maxVectorPages ? await extractPdfVectors(input) : [];
       const artwork = originalArtwork ?? await renderDocxArtwork(pages, vectors, directory);
+      for (const [index, image] of scannedArtwork) artwork.set(index, image);
       // Original artwork already includes the logos, at the PDF's exact coordinates.
       const documentPages = originalArtwork ? pages.map(page => ({ ...page, images: [] })) : pages;
       const documentOptions = {
         creator: "PDF Master Pro",
         title: originalName,
-        description: `Documento recriado a partir de ${originalName} pelo PDF Master Pro.`,
+        description: `Documento recriado a partir de ${originalName} pelo PDF Master Pro.${scannedArtwork.size ? " Contém texto reconhecido por OCR; revise nomes e valores." : ""}`,
         styles: { default: { document: { run: { font: "Arial", size: 22 } } } },
       };
       // Documentos longos são montados em blocos: o gráfico de objetos do DOCX
