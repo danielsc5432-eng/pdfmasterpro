@@ -8,7 +8,7 @@ import { parseLayout, type LayoutImageItem, type LayoutPage, type LayoutTextItem
 import { pdfToDocxWithMsWord } from "./msword";
 import { commandExists, execFile } from "./system";
 import { extractPdfVectors } from "./vector";
-import { renderDocxArtwork } from "./docx-artwork";
+import { renderDocxArtwork, renderOriginalArtwork } from "./docx-artwork";
 
 export type DocxParagraph = { text: string; pageBreakBefore: boolean; heading: boolean };
 
@@ -352,8 +352,11 @@ export async function pdfToDocx(input: Uint8Array, originalName = "documento") {
       // Operators may explicitly cap artwork extraction; the default preserves
       // all pages instead of silently dropping grids on documents over 40 pages.
       const maxVectorPages = Number(process.env.PDF_TO_WORD_MAX_VECTOR_PAGES || Infinity);
-      const vectors = pages.length <= maxVectorPages ? await extractPdfVectors(input) : [];
-      const artwork = await renderDocxArtwork(pages, vectors, directory);
+      const originalArtwork = pages.length <= maxVectorPages ? await renderOriginalArtwork(inputPath, pages.length, directory) : null;
+      const vectors = !originalArtwork && pages.length <= maxVectorPages ? await extractPdfVectors(input) : [];
+      const artwork = originalArtwork ?? await renderDocxArtwork(pages, vectors, directory);
+      // Original artwork already includes the logos, at the PDF's exact coordinates.
+      const documentPages = originalArtwork ? pages.map(page => ({ ...page, images: [] })) : pages;
       const documentOptions = {
         creator: "PDF Master Pro",
         title: originalName,
@@ -373,7 +376,7 @@ export async function pdfToDocx(input: Uint8Array, originalName = "documento") {
         }
         buffer = await mergeDocxBodies(chunks);
       } else {
-        const document = new Document({ ...documentOptions, sections: layoutSections(pages, assets, artwork) });
+        const document = new Document({ ...documentOptions, sections: layoutSections(documentPages, assets, artwork) });
         buffer = await Packer.toBuffer(document);
       }
       return buffer;
