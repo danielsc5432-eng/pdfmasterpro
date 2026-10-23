@@ -9,6 +9,8 @@ import { getTool } from "@/lib/tools/catalog";
 import { resolveEntitlements } from "@/lib/billing/entitlements";
 import { PLAN_HEADER, PLAN_SIGNATURE_HEADER, signPlanHeaders } from "@/lib/billing/plan-token";
 import type { Plan } from "@/lib/plans";
+import { getCurrentUser } from "@/lib/auth/session";
+import { testingTaskLimit } from "@/lib/billing/testing-quota";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -33,9 +35,12 @@ export async function POST(request: NextRequest) {
   if (toolDefinition?.premium && !limits.premiumTools) return errorResponse(`A ferramenta "${toolDefinition.name}" é exclusiva do plano Premium. Assine para liberar todas as ferramentas.`, 402);
 
   const session = getSessionContext(request);
-  if (Number.isFinite(limits.tasksPerDay)) {
+  const dailyLimit = testingTaskLimit(getCurrentUser(request)?.email, limits.tasksPerDay);
+  // The authenticated proxy already checks quota. A worker must not apply a
+  // second free-plan quota to requests carrying a verified plan signature.
+  if (Number.isFinite(dailyLimit) && entitlements.source !== "signed") {
     const used = await countRecentTasks(session.hash);
-    if (used >= limits.tasksPerDay) return errorResponse(`Você usou as ${limits.tasksPerDay} tarefas gratuitas de hoje. Assine o Premium para processar sem limites.`, 429);
+    if (used >= dailyLimit) return errorResponse(`Você usou as ${dailyLimit} tarefas disponíveis nas últimas 24 horas. Aguarde a renovação da cota ou assine o Premium para processar sem limites.`, 429);
   }
 
   const workerUrl = process.env.PROCESSING_WORKER_URL?.trim();
