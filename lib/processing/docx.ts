@@ -672,7 +672,7 @@ export async function pdfToDocx(input: Uint8Array, originalName = "documento") {
     let pages: LayoutPage[] = [];
     try {
       const pageCount = await pdfPageCount(inputPath);
-      const maxImagePages = Number(process.env.PDF_TO_WORD_MAX_IMAGE_PAGES || 90);
+      const maxImagePages = Number(process.env.PDF_TO_WORD_MAX_IMAGE_PAGES || 75);
       const renderImages = pageCount === 0 || pageCount <= maxImagePages;
       // pdftotext e a extração de imagens são independentes: rodam em paralelo.
       const [xml, htmlXml] = await Promise.all([
