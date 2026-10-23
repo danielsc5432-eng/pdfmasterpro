@@ -1,11 +1,28 @@
 import { pdfToDocx } from "./docx";
 import { inspectConversionMode, structuralPdfToDocx } from "./pdf2docx";
+import { betterFidelity, checkDocxFidelity, fidelityStatus, unsafeFidelity } from "./docx-fidelity";
 
 /** Preserve form geometry; OCR scanned pages; rebuild native flow when appropriate. */
-export async function automaticPdfToDocx(input: Uint8Array, name: string) {
-  if (await inspectConversionMode(input) === "tables") {
-    try { return await structuralPdfToDocx(input, 120000); }
-    catch { /* Recover with the positional engine instead of asking for settings. */ }
+export async function checkedPdfToDocx(input: Uint8Array, name: string) {
+  const deadline = Date.now() + 260000;
+  let mode = await inspectConversionMode(input);
+  let output: Uint8Array;
+  if (mode === "tables") {
+    try { output = await structuralPdfToDocx(input, 120000); }
+    catch { mode = "layout"; output = await pdfToDocx(input,name,"por+eng"); }
+  } else output = await pdfToDocx(input,name,"por+eng");
+  let report = await checkDocxFidelity(input,output,Math.min(90000,deadline-Date.now()));
+  if (report && fidelityStatus(report) === "review" && !report.ocrReview && deadline-Date.now()>60000) {
+    try {
+      const alternate = mode === "layout" ? await structuralPdfToDocx(input, Math.min(120000,Math.floor((deadline-Date.now())/2))) : await pdfToDocx(input,name,"por+eng");
+      const measured = await checkDocxFidelity(input,alternate,Math.min(90000,deadline-Date.now()));
+      if (measured && betterFidelity(measured,report)) { output=alternate; report=measured; }
+    } catch { /* Keep the candidate whose fidelity was actually measured. */ }
   }
-  return pdfToDocx(input, name, "por+eng");
+  if (report && unsafeFidelity(report)) throw new Error("A conferência detectou diferenças nas páginas, textos ou números. Não foi possível gerar um Word confiável para este PDF.");
+  return { output, report, status: fidelityStatus(report) };
+}
+
+export async function automaticPdfToDocx(input: Uint8Array, name: string) {
+  return (await checkedPdfToDocx(input,name)).output;
 }
