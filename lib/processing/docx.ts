@@ -361,6 +361,12 @@ function mergedParagraphs(items: LayoutTextItem[]): Paragraph[] {
   return output;
 }
 
+/** Configurações compartilhadas de tabela (evita milhares de objetos duplicados). */
+const TABLE_BORDER = { style: BorderStyle.SINGLE, size: 4, color: "D6D6DE" } as const;
+const TABLE_INNER_BORDER = { style: BorderStyle.SINGLE, size: 4, color: "E3E3EA" } as const;
+const TABLE_CELL_MARGINS = { top: 40, bottom: 40, left: 80, right: 80 } as const;
+const TABLE_HEADER_SHADING = { type: ShadingType.CLEAR, fill: "F2F3F7", color: "auto" } as const;
+
 /** Converte um bloco de linhas tabulares em uma tabela real do Word. */
 function buildTable(block: LayoutRow[]): Table {
   const clusters = columnClusters(block);
@@ -388,9 +394,9 @@ function buildTable(block: LayoutRow[]): Table {
         children.push(...itemRuns(item, header));
       });
       return new TableCell({
-        shading: header ? { type: ShadingType.CLEAR, fill: "F2F3F7", color: "auto" } : undefined,
+        shading: header ? TABLE_HEADER_SHADING : undefined,
         verticalAlign: VerticalAlign.CENTER,
-        margins: { top: 40, bottom: 40, left: 80, right: 80 },
+        margins: TABLE_CELL_MARGINS,
         children: [new Paragraph({ spacing: { before: 20, after: 20 }, children: children.length ? children : [new TextRun({ text: "" })] })],
       });
     });
@@ -402,12 +408,12 @@ function buildTable(block: LayoutRow[]): Table {
     width: { size: 100, type: WidthType.PERCENTAGE },
     layout: TableLayoutType.AUTOFIT,
     borders: {
-      top: { style: BorderStyle.SINGLE, size: 4, color: "D6D6DE" },
-      bottom: { style: BorderStyle.SINGLE, size: 4, color: "D6D6DE" },
-      left: { style: BorderStyle.SINGLE, size: 4, color: "D6D6DE" },
-      right: { style: BorderStyle.SINGLE, size: 4, color: "D6D6DE" },
-      insideHorizontal: { style: BorderStyle.SINGLE, size: 4, color: "E3E3EA" },
-      insideVertical: { style: BorderStyle.SINGLE, size: 4, color: "E3E3EA" },
+      top: TABLE_BORDER,
+      bottom: TABLE_BORDER,
+      left: TABLE_BORDER,
+      right: TABLE_BORDER,
+      insideHorizontal: TABLE_INNER_BORDER,
+      insideVertical: TABLE_INNER_BORDER,
     },
   });
 }
@@ -582,6 +588,28 @@ async function readPageImages(directory: string, prefix: string, inputPath: stri
   }
 }
 
+/** Junta vários DOCX (gerados em blocos) em um único documento. */
+async function mergeDocxBodies(chunks: Uint8Array[]): Promise<Uint8Array<ArrayBuffer>> {
+  if (chunks.length === 1) return chunks[0] as Uint8Array<ArrayBuffer>;
+  const base = await JSZip.loadAsync(chunks[0]);
+  const baseEntry = base.file("word/document.xml");
+  if (!baseEntry) return chunks[0] as Uint8Array<ArrayBuffer>;
+  const baseXml = await baseEntry.async("string");
+  const bodies: string[] = [];
+  for (const chunk of chunks) {
+    const zip = await JSZip.loadAsync(chunk);
+    const entry = zip.file("word/document.xml");
+    if (!entry) continue;
+    const xml = await entry.async("string");
+    const match = /<w:body>([\s\S]*)<\/w:body>/.exec(xml);
+    if (match) bodies.push(match[1]);
+  }
+  if (!bodies.length) return chunks[0] as Uint8Array<ArrayBuffer>;
+  base.file("word/document.xml", baseXml.replace(/<w:body>[\s\S]*<\/w:body>/, `<w:body>${bodies.join("")}</w:body>`));
+  const out = await base.generateAsync({ type: "uint8array", compression: "DEFLATE" });
+  return new Uint8Array(out);
+}
+
 /** Abre o DOCX como ZIP, injeta formas VML no document.xml e reempacota. */
 async function injectVmlIntoDocx(docx: Uint8Array, vectors: PdfVectorPage[]): Promise<Uint8Array<ArrayBuffer>> {
   const zip = await JSZip.loadAsync(docx).catch(() => null);
@@ -674,14 +702,27 @@ export async function pdfToDocx(input: Uint8Array, originalName = "documento") {
       // estourar o tempo limite do servidor: as tabelas já têm bordas próprias.
       const maxVectorPages = Number(process.env.PDF_TO_WORD_MAX_VECTOR_PAGES || 40);
       const vectors = pages.length <= maxVectorPages ? await extractPdfVectors(input) : [];
-      const document = new Document({
+      const documentOptions = {
         creator: "PDF Master Pro",
         title: originalName,
         description: `Documento recriado a partir de ${originalName} pelo PDF Master Pro.`,
         styles: { default: { document: { run: { font: "Arial", size: 22 } } } },
-        sections: layoutSections(pages, assets),
-      });
-      let buffer = new Uint8Array(await Packer.toBuffer(document));
+      };
+      // Documentos longos são montados em blocos: o gráfico de objetos do DOCX
+      // inteiro consome muita memória e pode derrubar o processo em produção.
+      const chunkSize = Number(process.env.PDF_TO_WORD_CHUNK_PAGES || 40);
+      let buffer: Uint8Array;
+      if (!assets.size && pages.length > chunkSize) {
+        const chunks: Uint8Array[] = [];
+        for (let start = 0; start < pages.length; start += chunkSize) {
+          const part = new Document({ ...documentOptions, sections: layoutSections(pages.slice(start, start + chunkSize), assets) });
+          chunks.push(new Uint8Array(await Packer.toBuffer(part)));
+        }
+        buffer = await mergeDocxBodies(chunks);
+      } else {
+        const document = new Document({ ...documentOptions, sections: layoutSections(pages, assets) });
+        buffer = await Packer.toBuffer(document);
+      }
       // Injeta formas VML (bordas/linhas do PDF) no document.xml para fidelidade visual.
       if (vectors.some((v) => v.lines.length || v.rects.length)) {
         buffer = await injectVmlIntoDocx(buffer, vectors);
