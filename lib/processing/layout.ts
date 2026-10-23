@@ -18,13 +18,13 @@ export type LayoutImageItem = { x: number; y: number; width: number; height: num
 
 export type LayoutPage = { width: number; height: number; texts: LayoutTextItem[]; images: LayoutImageItem[] };
 
-type BboxWord = { text: string; x: number; width: number };
+type BboxWord = { text: string; x: number; width: number; y: number; height: number };
 
 type BboxLine = { x: number; y: number; width: number; height: number; text: string; words: BboxWord[] };
 
 type BboxPage = { width: number; height: number; lines: BboxLine[] };
 
-type HtmlRun = { fontId: string; left: number; top: number; segments: LayoutSegment[]; plain: string };
+type HtmlRun = { fontId: string; left: number; top: number; width?: number; segments: LayoutSegment[]; plain: string };
 
 type HtmlPage = { fonts: Record<string, LayoutFont>; texts: HtmlRun[]; images: LayoutImageItem[] };
 
@@ -120,7 +120,8 @@ export function parseBboxLayout(xml: string): BboxPage[] {
         .map((word) => {
           const wordAttributes = parseAttributes(word[1]);
           const x = toNumber(wordAttributes.xMin);
-          return { text: decodeEntities(word[2]).trim(), x, width: Math.max(0, toNumber(wordAttributes.xMax) - x) };
+          const y = toNumber(wordAttributes.yMin);
+          return { text: decodeEntities(word[2]).trim(), x, width: Math.max(0, toNumber(wordAttributes.xMax) - x), y, height: Math.max(0, toNumber(wordAttributes.yMax) - y) };
         })
         .filter((word) => word.text);
       const text = words.map((word) => word.text).join(" ").trim();
@@ -149,7 +150,7 @@ export function parsePdfToHtml(xml: string): HtmlPage[] {
       const attributes = parseAttributes(text[1]);
       const segments = parseSegments(text[2]);
       const plain = segments.map((segment) => segment.text).join("");
-      if (plain.trim()) texts.push({ fontId: attributes.font || "", left: toNumber(attributes.left), top: toNumber(attributes.top), segments, plain });
+      if (plain.trim()) texts.push({ fontId: attributes.font || "", left: toNumber(attributes.left), top: toNumber(attributes.top), width: toNumber(attributes.width), segments, plain });
     }
     const images: LayoutImageItem[] = [];
     for (const image of page[2].matchAll(/<image\b([^>]*?)\/?>/g)) {
@@ -292,7 +293,32 @@ export function joinLayoutPages(bboxPages: BboxPage[], htmlPages: HtmlPage[]): L
     const runs = html?.texts ?? [];
     const fonts = html?.fonts ?? {};
     const used = new Set<number>();
-    const texts: LayoutTextItem[] = page.lines.map((line) => {
+    const texts: LayoutTextItem[] = page.lines.flatMap((line) => {
+      // Poppler may combine neighboring form fields into one bbox line. Resolve
+      // styles against each word's own position, rather than treating the whole
+      // row as one unmatched run and enlarging its font to the bbox height.
+      const groups: LayoutTextItem[] = [];
+      for (const word of line.words) {
+        const candidates = runs.filter(run => Math.abs(run.top - word.y) < Math.max(5, word.height)
+          && word.x >= run.left - 2 && word.x + word.width <= run.left + (run.width ?? 0) + 3
+          && normalizeText(run.plain).includes(normalizeText(word.text)));
+        const match = candidates.sort((a,b) => Math.abs(a.top-word.y)-Math.abs(b.top-word.y) || Math.abs(a.left-word.x)-Math.abs(b.left-word.x))[0];
+        if (!match) continue;
+        const spec = fonts[match.fontId];
+        if (!spec || spec.size <= 0) continue;
+        const characters = match.segments.flatMap(segment => [...segment.text].filter(character => !/\s/.test(character)).map(character => ({ character, bold: segment.bold, italic: segment.italic })));
+        const start = characters.map(c=>c.character).join("").indexOf(normalizeText(word.text));
+        const wordStyle = characters.slice(start, start + normalizeText(word.text).length);
+        const styled: LayoutWord = { text: word.text, x: word.x, width: word.width, bold: /bold/i.test(spec.family) || wordStyle.some(c=>c.bold), italic: /italic|oblique/i.test(spec.family) || wordStyle.some(c=>c.italic) };
+        const font: LayoutFont = { ...spec, family: mapFontFamily(spec.family), bold: styled.bold, italic: styled.italic };
+        const previous = groups[groups.length-1];
+        if (previous && Math.abs(previous.y-word.y)<0.2 && previous.font.family===font.family && previous.font.size===font.size && previous.font.bold===font.bold && previous.font.italic===font.italic && previous.font.color===font.color) {
+          previous.words.push(styled);
+          previous.width = word.x+word.width-previous.x;
+          previous.segments[0].text += " " + word.text;
+        } else groups.push({ x: word.x, y: word.y, width: word.width, height: word.height, font, words: [styled], segments: [{ text: word.text, bold: styled.bold, italic: styled.italic }] });
+      }
+      if (groups.reduce((count,group)=>count+group.words.length,0) === line.words.length) return groups;
       const match = findRun(runs, used, line.text, line.x, line.y);
       const spec = match ? fonts[match.fontId] : undefined;
       const size = spec && spec.size > 0 ? spec.size : Math.max(6, line.height || 11);
@@ -305,7 +331,7 @@ export function joinLayoutPages(bboxPages: BboxPage[], htmlPages: HtmlPage[]): L
         italic: /italic|oblique/i.test(family),
       };
       const segments = match ? match.segments : [{ text: line.text, bold: font.bold, italic: font.italic }];
-      return { x: line.x, y: line.y, width: line.width, height: line.height, segments, words: styleWords(line.words, segments, font), font };
+      return [{ x: line.x, y: line.y, width: line.width, height: line.height, segments, words: styleWords(line.words, segments, font), font }];
     });
 
     // Don't merge across different columns too aggressively

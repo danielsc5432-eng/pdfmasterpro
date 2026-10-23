@@ -2,6 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { joinLayoutPages, mapFontFamily, parseBboxLayout, parseLayout, parsePdfToHtml, parseSegments } from "../../lib/processing/layout";
 
+test("adjacent form fields keep their own font size and emphasis when bbox joins the row", () => {
+  const bbox = `<doc><page width="595" height="842"><line xMin="30" yMin="100" xMax="300" yMax="111"><word xMin="30" yMin="100" xMax="80" yMax="111">DOCUMENTO</word><word xMin="90" yMin="100" xMax="115" yMax="111">Valor</word><word xMin="280" yMin="100" xMax="300" yMax="111">CPF:</word></line></page></doc>`;
+  const html = `<pdf2xml><page><fontspec id="0" size="9" family="Arial" color="#000000"/><fontspec id="1" size="8" family="Arial,Bold" color="#000000"/><text top="101" left="30" width="90" font="0"><b>DOCUMENTO</b> Valor</text><text top="101" left="280" width="25" font="1"><b>CPF:</b></text></page></pdf2xml>`;
+  const result = parseLayout(bbox, html)[0].texts;
+  assert.deepEqual(result.map(item=>item.font.size), [9,9,8]);
+  assert.deepEqual(result.map(item=>item.font.bold), [true,false,true]);
+  assert.deepEqual(result.map(item=>item.x), [30,90,280]);
+});
+
 const BBOX = `<html><body><doc>
 <page width="595.000000" height="842.000000">
 <flow locked="0"><block xMin="60.000000" yMin="69.076000" xMax="290.000000" yMax="85.726000">

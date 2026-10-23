@@ -9,6 +9,7 @@ import { pdfToDocxWithMsWord } from "./msword";
 import { commandExists, execFile } from "./system";
 import { extractPdfVectors } from "./vector";
 import { renderDocxArtwork, renderOriginalArtwork } from "./docx-artwork";
+import { extractionPdf } from "./pdf-visible-text";
 
 export type DocxParagraph = { text: string; pageBreakBefore: boolean; heading: boolean };
 
@@ -319,10 +320,12 @@ export async function pdfToDocx(input: Uint8Array, originalName = "documento") {
   if (!(await commandExists(extractor))) throw new Error("O extrator de texto PDF não está configurado neste servidor.");
   const directory = await mkdtemp(path.join(os.tmpdir(), "pdfmaster-docx-"));
   const inputPath = path.join(directory, "input.pdf");
+  const extractionPath = path.join(directory, "visible-text.pdf");
   const layoutPath = path.join(directory, "layout.xml");
   const textPath = path.join(directory, "extracted.txt");
   try {
     await writeFile(inputPath, input);
+    await writeFile(extractionPath, await extractionPdf(input));
     let pages: LayoutPage[] = [];
     try {
       const pageCount = await pdfPageCount(inputPath);
@@ -331,12 +334,12 @@ export async function pdfToDocx(input: Uint8Array, originalName = "documento") {
       // pdftotext e a extração de imagens são independentes: rodam em paralelo.
       const [xml, htmlXml] = await Promise.all([
         (async () => {
-          await execFile(extractor, ["-bbox-layout", "-enc", "UTF-8", inputPath, layoutPath], { timeout: 180000, maxBuffer: 96 * 1024 * 1024 });
+          await execFile(extractor, ["-bbox-layout", "-enc", "UTF-8", extractionPath, layoutPath], { timeout: 180000, maxBuffer: 96 * 1024 * 1024 });
           return readFile(layoutPath, "utf8");
         })(),
         (async () => {
           // Font/style extraction is needed even on pages without raster images.
-          return readPageImages(path.join(directory, "html"), inputPath, htmlConverter, renderImages);
+          return readPageImages(path.join(directory, "html"), extractionPath, htmlConverter, renderImages);
         })(),
       ]);
       pages = parseLayout(xml, htmlXml);
@@ -382,7 +385,7 @@ export async function pdfToDocx(input: Uint8Array, originalName = "documento") {
       return buffer;
     }
 
-    await execFile(extractor, ["-enc", "UTF-8", inputPath, textPath], { timeout: 180000, maxBuffer: 96 * 1024 * 1024 });
+    await execFile(extractor, ["-enc", "UTF-8", extractionPath, textPath], { timeout: 180000, maxBuffer: 96 * 1024 * 1024 });
     const paragraphs = buildDocxParagraphs(await readFile(textPath, "utf8"));
     if (!paragraphs.some((item) => item.text.trim())) throw new Error("Este PDF não contém texto extraível. OCR será necessário para documentos digitalizados.");
     const fallback = new Document({
