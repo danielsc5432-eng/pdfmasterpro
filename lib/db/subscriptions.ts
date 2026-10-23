@@ -91,7 +91,7 @@ export async function createSubscription(input: {
       [id, input.openId, input.provider, input.planId, input.providerSubscriptionId, input.payerEmail?.slice(0, 320) ?? null, input.amountCents, input.frequency, input.frequencyType],
     );
     return id;
-  } catch (error) { warn("createSubscription", error); return null; }
+  } catch (error) { warn("createSubscription", error); throw error; }
 }
 
 export async function updateSubscription(id: string, patch: {
@@ -106,7 +106,7 @@ export async function updateSubscription(id: string, patch: {
   if (!sets.length) return;
   try {
     await query(`UPDATE subscriptions SET ${sets.join(", ")} WHERE id = ?`, [...params, id]);
-  } catch (error) { warn("updateSubscription", error); }
+  } catch (error) { warn("updateSubscription", error); throw error; }
 }
 
 /** Cancela a assinatura ativa do usuário mantendo o acesso até o fim do período pago. */

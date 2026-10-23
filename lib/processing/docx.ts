@@ -3,11 +3,12 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import JSZip from "jszip";
-import { AlignmentType, BorderStyle, Document, FrameAnchorType, FrameWrap, ImageRun, LineRuleType, PageOrientation, Packer, Paragraph, ShadingType, Table, TableCell, TableLayoutType, TableRow, TabStopType, TextRun, VerticalAlign, WidthType } from "docx";
+import { Document, FrameAnchorType, FrameWrap, HorizontalPositionRelativeFrom, ImageRun, LineRuleType, PageOrientation, Packer, Paragraph, SectionType, TabStopType, TextRun, TextWrappingType, VerticalPositionRelativeFrom } from "docx";
 import { parseLayout, type LayoutImageItem, type LayoutPage, type LayoutTextItem } from "./layout";
 import { pdfToDocxWithMsWord } from "./msword";
 import { commandExists, execFile } from "./system";
-import { extractPdfVectors, injectVectorShapes, type PdfVectorPage } from "./vector";
+import { extractPdfVectors } from "./vector";
+import { renderDocxArtwork } from "./docx-artwork";
 
 export type DocxParagraph = { text: string; pageBreakBefore: boolean; heading: boolean };
 
@@ -156,11 +157,18 @@ function textParagraph(items: LayoutTextItem[], pageWidth: number) {
 
 function imageParagraph(item: LayoutImageItem, data: Uint8Array) {
   return new Paragraph({
-    frame: frameAt(item.x, item.y),
-    spacing: { before: 0, after: 0 },
+    spacing: { before: 0, after: 0, line: 1, lineRule: LineRuleType.EXACT },
     children: [new ImageRun({
-      type: "png",
+      type: data[0] === 0xff && data[1] === 0xd8 ? "jpg" : "png",
       data,
+      floating: {
+        horizontalPosition: { relative: HorizontalPositionRelativeFrom.PAGE, offset: Math.round(item.x * 12700) },
+        verticalPosition: { relative: VerticalPositionRelativeFrom.PAGE, offset: Math.round(item.y * 12700) },
+        allowOverlap: true,
+        layoutInCell: false,
+        lockAnchor: true,
+        wrap: { type: TextWrappingType.NONE },
+      },
       transformation: {
         width: Math.max(1, Math.round(item.width * POINTS_TO_PIXELS)),
         height: Math.max(1, Math.round(item.height * POINTS_TO_PIXELS)),
@@ -173,368 +181,23 @@ function itemText(item: LayoutTextItem) {
   return item.segments.map((segment) => segment.text).join("").replace(/\s+/g, " ").trim();
 }
 
-function hexColor(value: string | undefined, fallback = "000000") {
-  const hex = String(value ?? "").replace("#", "").toUpperCase();
-  return /^[0-9A-F]{6}$/.test(hex) ? hex : fallback;
-}
-
-function itemRuns(item: LayoutTextItem, bold = false): TextRun[] {
-  const font = item.font;
-  const size = Math.max(2, Math.round((font.size || 10) * 2));
-  const color = hexColor(font.color);
-  const segments = item.segments.filter((segment) => segment.text);
-  if (!segments.length) {
-    const text = itemText(item);
-    return text ? [new TextRun({ text, font: font.family || "Arial", size, bold: bold || font.bold, italics: font.italic, color })] : [];
-  }
-  return segments.map((segment) => new TextRun({
-    text: segment.text,
-    font: font.family || "Arial",
-    size,
-    bold: bold || segment.bold || font.bold,
-    italics: segment.italic || font.italic,
-    color,
-  }));
-}
-
-type LayoutRow = { top: number; bottom: number; items: LayoutTextItem[] };
-
-/** Agrupa itens de texto em linhas usando sobreposição vertical (robusto a diferenças de fonte). */
-function groupLayoutRows(items: LayoutTextItem[]): LayoutRow[] {
-  const sorted = [...items].sort((a, b) => a.y - b.y);
-  const rows: LayoutRow[] = [];
-  for (const item of sorted) {
-    const height = Math.max(2, item.height || item.font.size || 10);
-    const top = item.y;
-    const bottom = item.y + height;
-    const match = rows.find((row) => {
-      const overlap = Math.min(bottom, row.bottom) - Math.max(top, row.top);
-      const smallest = Math.min(height, row.bottom - row.top);
-      return overlap > smallest * 0.4;
-    });
-    if (match) {
-      match.items.push(item);
-      match.top = Math.min(match.top, top);
-      match.bottom = Math.max(match.bottom, bottom);
-    } else {
-      rows.push({ top, bottom, items: [item] });
-    }
-  }
-  rows.sort((a, b) => a.top - b.top);
-  for (const row of rows) row.items.sort((a, b) => a.x - b.x);
-  return rows.filter((row) => row.items.some((item) => itemText(item).length > 0));
-}
-
-/** Agrupa posições X em colunas (tolerância proporcional ao corpo do texto). */
-function columnClusters(rows: LayoutRow[]): number[] {
-  const xs = rows.flatMap((row) => row.items.map((item) => item.x)).sort((a, b) => a - b);
-  const clusters: number[] = [];
-  for (const x of xs) {
-    const last = clusters[clusters.length - 1];
-    if (last === undefined || x - last > 18) clusters.push(x);
-  }
-  return clusters;
-}
-
-/** Uma linha é tabular quando tem 2+ células curtas e separadas horizontalmente. */
-function rowIsTabular(row: LayoutRow) {
-  const cells = row.items
-    .map((item) => ({ item, text: itemText(item) }))
-    .filter((entry) => entry.text.length > 0 && /[0-9A-Za-zÀ-ÿ]/.test(entry.text.replace(/_{2,}/g, "")));
-  if (cells.length < 2) return false;
-  if (cells.some((entry) => entry.text.length > 90)) return false;
-  const compact = cells.some((entry) => entry.text.replace(/\s+/g, "").length <= 16);
-  const numeric = cells.some((entry) => /[0-9]/.test(entry.text));
-  if (!compact && !numeric) return false;
-  return cells[cells.length - 1].item.x - cells[0].item.x > 40;
-}
-
-/** Detecta regiões de prosa em 2 a 4 colunas (jornais, artigos, relatórios). */
-function detectProseColumns(items: LayoutTextItem[], pageWidth: number): LayoutTextItem[][] | null {
-  const prose = (item: LayoutTextItem) => itemText(item).length > 22 || item.width > pageWidth * 0.12;
-  const proseItems = items.filter(prose);
-  if (proseItems.length < 5) return null;
-  const bands: number[] = [];
-  for (const x of proseItems.map((item) => item.x).sort((a, b) => a - b)) {
-    const last = bands[bands.length - 1];
-    if (last === undefined || x - last > pageWidth * 0.04) bands.push(x);
-  }
-  if (bands.length < 2 || bands.length > 4) return null;
-  for (let index = 1; index < bands.length; index += 1) {
-    if (bands[index] - bands[index - 1] < pageWidth * 0.12) return null;
-  }
-  const groups: LayoutTextItem[][] = bands.map(() => []);
-  for (const item of items) {
-    let bestIndex = 0;
-    let bestDistance = Number.POSITIVE_INFINITY;
-    bands.forEach((x, index) => {
-      const distance = Math.abs(item.x - x);
-      if (distance < bestDistance) {
-        bestDistance = distance;
-        bestIndex = index;
-      }
-    });
-    groups[bestIndex].push(item);
-  }
-  if (groups.some((group) => group.filter(prose).length < 3)) return null;
-  return groups.map((group) => group.sort((a, b) => a.y - b.y || a.x - b.x));
-}
-
-/** Blocos consecutivos de linhas tabulares que formam tabelas válidas. */
-function findTableBlocks(rows: LayoutRow[]) {
-  const blocks: { start: number; end: number }[] = [];
-  let index = 0;
-  while (index < rows.length) {
-    if (rowIsTabular(rows[index])) {
-      let end = index;
-      while (end < rows.length && rowIsTabular(rows[end])) end += 1;
-      const columns = columnClusters(rows.slice(index, end));
-      if (end - index >= 3 && columns.length >= 2 && columns.length <= 16) {
-        // Evita transformar prosa (jornais, artigos) em tabela: tabelas reais
-        // têm células curtas ou com números na maior parte das linhas.
-        const cells = rows.slice(index, end).flatMap((row) => row.items).map(itemText);
-        const compactCells = cells.filter((text) => text.replace(/\s+/g, "").length <= 16).length;
-        const numericCells = cells.filter((text) => /[0-9]/.test(text)).length;
-        if (compactCells >= cells.length * 0.35 || numericCells >= cells.length * 0.35) blocks.push({ start: index, end });
-      }
-      index = end;
-    } else {
-      index += 1;
-    }
-  }
-  return blocks;
-}
-
-/** Junta itens da mesma linha em um único parágrafo, preservando formatação. */
-function rowParagraph(row: LayoutRow): Paragraph {
-  const children: TextRun[] = [];
-  row.items.forEach((item, index) => {
-    const text = itemText(item);
-    if (!text) return;
-    if (children.length) children.push(new TextRun({ text: index > 0 ? "  " : " ", font: item.font.family || "Arial", size: Math.max(2, Math.round((item.font.size || 10) * 2)) }));
-    children.push(...itemRuns(item));
-  });
-  const first = row.items[0];
-  return new Paragraph({
-    spacing: { before: 20, after: 20, line: Math.max(200, Math.round((first?.font.size || 10) * 1.35 * 20)) },
-    children: children.length ? children : [new TextRun({ text: "" })],
-  });
-}
-
-/** Junta várias linhas de uma coluna em parágrafos contínuos (reflow no Word). */
-function mergedParagraphs(items: LayoutTextItem[]): Paragraph[] {
-  const output: Paragraph[] = [];
-  let buffer: LayoutTextItem[] = [];
-  const sizes = items.map((item) => item.font.size || 10).sort((a, b) => a - b);
-  const medianSize = sizes.length ? sizes[Math.floor(sizes.length / 2)] : 10;
-  const flush = () => {
-    if (!buffer.length) return;
-    const children: TextRun[] = [];
-    for (const item of buffer) {
-      if (children.length) children.push(new TextRun({ text: " " }));
-      children.push(...itemRuns(item));
-    }
-    output.push(new Paragraph({ spacing: { before: 30, after: 30 }, children }));
-    buffer = [];
-  };
-  for (let index = 0; index < items.length; index += 1) {
-    const item = items[index];
-    const currentText = itemText(item);
-    const isListItem = /^([-*•·◦▪]|\(?[0-9]{1,3}(?:\.[0-9]{1,3})*[.)]|[a-z][.)])\s+/i.test(currentText);
-    if (isListItem) {
-      flush();
-      buffer.push(item);
-      flush();
-      continue;
-    }
-    const previous = buffer[buffer.length - 1];
-    if (previous) {
-      const sizeChange = Math.abs((previous.font.size || 10) - (item.font.size || 10)) > 1.5;
-      const smallPrint = (previous.font.size || 10) < medianSize * 0.8;
-      const previousText = itemText(previous);
-      const continues = !/[.!?…:;]$/.test(previousText) && !/[_]{3,}/.test(previousText) && (/^[a-zà-öø-ÿ(«"“']/u.test(currentText) || /[,\-–—/]$/.test(previousText));
-      if (sizeChange || smallPrint || !continues) flush();
-    }
-    buffer.push(item);
-  }
-  flush();
-  return output;
-}
-
-/** Configurações compartilhadas de tabela (evita milhares de objetos duplicados). */
-const TABLE_BORDER = { style: BorderStyle.SINGLE, size: 4, color: "D6D6DE" } as const;
-const TABLE_INNER_BORDER = { style: BorderStyle.SINGLE, size: 4, color: "E3E3EA" } as const;
-const TABLE_CELL_MARGINS = { top: 40, bottom: 40, left: 80, right: 80 } as const;
-const TABLE_HEADER_SHADING = { type: ShadingType.CLEAR, fill: "F2F3F7", color: "auto" } as const;
-
-/** Converte um bloco de linhas tabulares em uma tabela real do Word. */
-function buildTable(block: LayoutRow[]): Table {
-  const clusters = columnClusters(block);
-  const rows = block.map((row, rowIndex) => {
-    const buckets: LayoutTextItem[][] = clusters.map(() => []);
-    for (const item of row.items) {
-      if (!itemText(item)) continue;
-      let bestIndex = 0;
-      let bestDistance = Number.POSITIVE_INFINITY;
-      clusters.forEach((x, index) => {
-        const distance = Math.abs(item.x - x);
-        if (distance < bestDistance) {
-          bestDistance = distance;
-          bestIndex = index;
-        }
-      });
-      buckets[bestIndex].push(item);
-    }
-    const header = rowIndex === 0;
-    const cells = buckets.map((items) => {
-      const sorted = [...items].sort((a, b) => a.x - b.x);
-      const children: TextRun[] = [];
-      sorted.forEach((item) => {
-        if (children.length) children.push(new TextRun({ text: " " }));
-        children.push(...itemRuns(item, header));
-      });
-      return new TableCell({
-        shading: header ? TABLE_HEADER_SHADING : undefined,
-        verticalAlign: VerticalAlign.CENTER,
-        margins: TABLE_CELL_MARGINS,
-        children: [new Paragraph({ spacing: { before: 20, after: 20 }, children: children.length ? children : [new TextRun({ text: "" })] })],
-      });
-    });
-    return new TableRow({ children: cells, tableHeader: header });
-  });
-
-  return new Table({
-    rows,
-    width: { size: 100, type: WidthType.PERCENTAGE },
-    layout: TableLayoutType.AUTOFIT,
-    borders: {
-      top: TABLE_BORDER,
-      bottom: TABLE_BORDER,
-      left: TABLE_BORDER,
-      right: TABLE_BORDER,
-      insideHorizontal: TABLE_INNER_BORDER,
-      insideVertical: TABLE_INNER_BORDER,
-    },
-  });
-}
-
-function layoutSections(pages: LayoutPage[], assets: Map<string, Uint8Array>) {
-  return pages.map((page) => {
-    const children: (Paragraph | Table)[] = [];
-    const textItems = page.texts.filter((item) => itemText(item).length > 0);
-    if (!textItems.length && !page.images.length) {
-      children.push(new Paragraph({ children: [] }));
-      return {
-        properties: {
-          page: {
-            size: { width: twips(page.width), height: twips(page.height), orientation: page.width > page.height ? PageOrientation.LANDSCAPE : PageOrientation.PORTRAIT },
-            margin: { top: 720, right: 720, bottom: 720, left: 720 },
-          },
-        },
-        children,
-      };
-    }
-
-    const rows = groupLayoutRows(textItems);
-    const blocks = findTableBlocks(rows);
-    const blockItems = new Set(blocks.flatMap((block) => rows.slice(block.start, block.end).flatMap((row) => row.items)));
-    const freeItems = textItems.filter((item) => !blockItems.has(item));
-    const proseColumns = detectProseColumns(freeItems, page.width);
-
-    if (proseColumns) {
-      // Separa cada coluna em blocos verticais (título, corpo, legendas/rodapé)
-      // para preservar a ordem de leitura correta da página.
-      type Segment = { items: LayoutTextItem[]; top: number; bottom: number };
-      const segments: Segment[] = [];
-      for (const column of proseColumns) {
-        const heights = column.map((item) => item.height || item.font.size || 10).sort((a, b) => a - b);
-        const lineHeight = heights[Math.floor(heights.length / 2)] || 10;
-        let current: Segment | null = null;
-        for (const item of column) {
-          const top = item.y;
-          const bottom = item.y + (item.height || item.font.size || 10);
-          if (current && top - current.bottom > lineHeight * 1.8) {
-            segments.push(current);
-            current = null;
-          }
-          if (current) {
-            current.items.push(item);
-            current.bottom = Math.max(current.bottom, bottom);
-          } else {
-            current = { items: [item], top, bottom };
-          }
-        }
-        if (current) segments.push(current);
-      }
-      const mainByColumn = proseColumns.map(() => -1);
-      segments.forEach((segment, segmentIndex) => {
-        const columnIndex = proseColumns.findIndex((column) => column.includes(segment.items[0]));
-        if (columnIndex >= 0 && (mainByColumn[columnIndex] < 0 || segment.items.length > segments[mainByColumn[columnIndex]].items.length)) {
-          mainByColumn[columnIndex] = segmentIndex;
-        }
-      });
-      const mains = mainByColumn.filter((index) => index >= 0).map((index) => segments[index]);
-      const extras = segments.filter((_, index) => !mainByColumn.includes(index));
-      if (mains.length) {
-        const mainTop = Math.min(...mains.map((segment) => segment.top));
-        const mainBottom = Math.max(...mains.map((segment) => segment.bottom));
-        for (const segment of extras.filter((entry) => entry.bottom <= mainTop).sort((a, b) => a.top - b.top)) {
-          children.push(...mergedParagraphs(segment.items));
-        }
-        for (const segment of mains) children.push(...mergedParagraphs(segment.items));
-        for (const segment of extras.filter((entry) => entry.top >= mainBottom).sort((a, b) => a.top - b.top)) {
-          children.push(...mergedParagraphs(segment.items));
-        }
-        for (const segment of extras.filter((entry) => entry.bottom > mainTop && entry.top < mainBottom).sort((a, b) => a.top - b.top)) {
-          children.push(...mergedParagraphs(segment.items));
-        }
-      } else {
-        for (const column of proseColumns) children.push(...mergedParagraphs(column));
-      }
-      for (const block of blocks) children.push(buildTable(rows.slice(block.start, block.end)));
-    } else {
-      let buffer: LayoutTextItem[] = [];
-      const flushBuffer = () => {
-        if (!buffer.length) return;
-        children.push(...mergedParagraphs(buffer));
-        buffer = [];
-      };
-      let index = 0;
-      while (index < rows.length) {
-        const block = blocks.find((entry) => entry.start === index);
-        if (block) {
-          flushBuffer();
-          children.push(buildTable(rows.slice(block.start, block.end)));
-          index = block.end;
-          continue;
-        }
-        const row = rows[index];
-        if (row.items.length === 1) {
-          buffer.push(row.items[0]);
-        } else {
-          flushBuffer();
-          children.push(rowParagraph(row));
-        }
-        index += 1;
-      }
-      flushBuffer();
-    }
-
-    for (const item of page.images) {
-      const data = assets.get(item.source);
-      if (data) children.push(imageParagraph(item, data));
-    }
-    if (!children.length) children.push(new Paragraph({ children: [] }));
-    return {
-      properties: {
-        page: {
-          size: { width: twips(page.width), height: twips(page.height), orientation: page.width > page.height ? PageOrientation.LANDSCAPE : PageOrientation.PORTRAIT },
-          margin: { top: 720, right: 720, bottom: 720, left: 720 },
-        },
+/** Preserve PDF geometry instead of guessing tables and reflowing form fields. */
+export function layoutSections(pages: LayoutPage[], assets: Map<string, Uint8Array>, artwork = new Map<number, Uint8Array>()) {
+  return pages.map((page, index) => ({
+    properties: {
+      type: SectionType.NEXT_PAGE,
+      page: {
+        size: { width: twips(page.width), height: twips(page.height), orientation: page.width > page.height ? PageOrientation.LANDSCAPE : PageOrientation.PORTRAIT },
+        margin: { top: 0, right: 0, bottom: 0, left: 0, header: 0, footer: 0 },
       },
-      children,
-    };
-  });
+    },
+    children: [
+      // The unframed anchor belongs to this page and gives drawings a stable origin.
+      new Paragraph({ spacing: { before: 0, after: 0, line: 1, lineRule: LineRuleType.EXACT }, children: artwork.has(index) ? [new ImageRun({ type: "png", data: artwork.get(index)!, transformation: { width: page.width * POINTS_TO_PIXELS, height: page.height * POINTS_TO_PIXELS }, floating: { horizontalPosition: { relative: HorizontalPositionRelativeFrom.PAGE, offset: 0 }, verticalPosition: { relative: VerticalPositionRelativeFrom.PAGE, offset: 0 }, behindDocument: true, allowOverlap: true, layoutInCell: false, lockAnchor: true, wrap: { type: TextWrappingType.NONE } }, altText: { name: "Bordas e preenchimentos", description: "Somente elementos gráficos; o texto do documento permanece editável." } })] : [new TextRun({ text: "", size: 2 })] }),
+      ...page.texts.filter((item) => itemText(item)).map((item) => textParagraph([item], page.width)),
+      ...page.images.flatMap((item) => { const bytes = assets.get(item.source); return bytes ? [imageParagraph(item, bytes)] : []; }),
+    ],
+  }));
 }
 
 function textFlowSections(paragraphs: DocxParagraph[]) {
@@ -569,19 +232,10 @@ async function pdfPageCount(inputPath: string) {
   }
 }
 
-/** Verifica rapidamente se o PDF tem imagens raster antes de renderizar páginas. */async function pdfHasRasterImages(inputPath: string) {
-  try {
-    const { stdout } = await execFile("pdfimages", ["-list", inputPath], { timeout: 60000, maxBuffer: 8 * 1024 * 1024 });
-    return stdout.split(/\r?\n/).some((line) => /^\s*\d+\s+\d+\s+image\b/.test(line));
-  } catch {
-    return true; // sem pdfimages: mantém o comportamento anterior
-  }
-}
-
-async function readPageImages(directory: string, prefix: string, inputPath: string, converter: string) {
+async function readPageImages(prefix: string, inputPath: string, converter: string, includeImages = true) {
   if (!(await commandExists(converter))) return "";
   try {
-    await execFile(converter, ["-xml", "-q", "-nodrm", "-enc", "UTF-8", "-zoom", "1", inputPath, prefix], { timeout: 180000, maxBuffer: 96 * 1024 * 1024 });
+    await execFile(converter, ["-xml", "-q", "-nodrm", "-enc", "UTF-8", "-zoom", "1", ...(!includeImages ? ["-i"] : []), inputPath, prefix], { timeout: 180000, maxBuffer: 96 * 1024 * 1024 });
     return await readFile(`${prefix}.xml`, "utf8");
   } catch {
     return "";
@@ -589,20 +243,31 @@ async function readPageImages(directory: string, prefix: string, inputPath: stri
 }
 
 /** Junta vários DOCX (gerados em blocos) em um único documento. */
-async function mergeDocxBodies(chunks: Uint8Array[]): Promise<Uint8Array<ArrayBuffer>> {
+export async function mergeDocxBodies(chunks: Uint8Array[]): Promise<Uint8Array<ArrayBuffer>> {
   if (chunks.length === 1) return chunks[0] as Uint8Array<ArrayBuffer>;
   const base = await JSZip.loadAsync(chunks[0]);
   const baseEntry = base.file("word/document.xml");
   if (!baseEntry) return chunks[0] as Uint8Array<ArrayBuffer>;
   const baseXml = await baseEntry.async("string");
   const bodies: string[] = [];
-  for (const chunk of chunks) {
+  for (const [index, chunk] of chunks.entries()) {
     const zip = await JSZip.loadAsync(chunk);
     const entry = zip.file("word/document.xml");
     if (!entry) continue;
     const xml = await entry.async("string");
     const match = /<w:body>([\s\S]*)<\/w:body>/.exec(xml);
-    if (match) bodies.push(match[1]);
+    if (match) {
+      // Only the final section may be a direct child of w:body. A chunk's
+      // terminal section must become a paragraph section break before joining.
+      let body = match[1];
+      if (index < chunks.length - 1) {
+        const terminalStart = body.lastIndexOf("<w:sectPr");
+        if (terminalStart >= 0 && /^<w:sectPr\b[\s\S]*?<\/w:sectPr>\s*$/.test(body.slice(terminalStart))) {
+          body = body.slice(0, terminalStart) + "<w:p><w:pPr>" + body.slice(terminalStart).trim() + "</w:pPr></w:p>";
+        }
+      }
+      bodies.push(body);
+    }
   }
   if (!bodies.length) return chunks[0] as Uint8Array<ArrayBuffer>;
   base.file("word/document.xml", baseXml.replace(/<w:body>[\s\S]*<\/w:body>/, `<w:body>${bodies.join("")}</w:body>`));
@@ -610,24 +275,13 @@ async function mergeDocxBodies(chunks: Uint8Array[]): Promise<Uint8Array<ArrayBu
   return new Uint8Array(out);
 }
 
-/** Abre o DOCX como ZIP, injeta formas VML no document.xml e reempacota. */
-async function injectVmlIntoDocx(docx: Uint8Array, vectors: PdfVectorPage[]): Promise<Uint8Array<ArrayBuffer>> {
-  const zip = await JSZip.loadAsync(docx).catch(() => null);
-  if (!zip) return docx as Uint8Array<ArrayBuffer>;
-  const docEntry = zip.file("word/document.xml");
-  if (!docEntry) return docx as Uint8Array<ArrayBuffer>;
-  const xml = await docEntry.async("string");
-  const patched = injectVectorShapes(xml, vectors);
-  if (patched === xml) return docx as Uint8Array<ArrayBuffer>;
-  zip.file("word/document.xml", patched);
-  const out = await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
-  return new Uint8Array(out);
-}
-
 export async function pdfToDocx(input: Uint8Array, originalName = "documento") {
-  // Motor principal: Microsoft Word (abre o PDF e salva em DOCX preservando o layout nativamente).
-  const viaWord = process.env.PDF_TO_WORD_DISABLE_MSWORD === "1" ? null : await pdfToDocxWithMsWord(input);
-  if (viaWord) return viaWord;
+  // Layout reconstruction is deterministic across Windows and Linux. Native Word
+  // reflow is an explicit opt-in, since it moves table/form content unpredictably.
+  if (process.env.PDF_TO_WORD_NATIVE_REFLOW === "1") {
+    const viaWord = await pdfToDocxWithMsWord(input);
+    if (viaWord) return viaWord;
+  }
   // Reserva 2: LibreOffice / soffice (desativado temporariamente para testar renderizador posicional melhorado)
   if (process.env.PDF_TO_WORD_USE_LIBREOFFICE === "1") {
     const configured = process.env.PDF_TO_WORD_CONVERTER;
@@ -672,7 +326,7 @@ export async function pdfToDocx(input: Uint8Array, originalName = "documento") {
     let pages: LayoutPage[] = [];
     try {
       const pageCount = await pdfPageCount(inputPath);
-      const maxImagePages = Number(process.env.PDF_TO_WORD_MAX_IMAGE_PAGES || 75);
+      const maxImagePages = Number(process.env.PDF_TO_WORD_MAX_IMAGE_PAGES || Infinity);
       const renderImages = pageCount === 0 || pageCount <= maxImagePages;
       // pdftotext e a extração de imagens são independentes: rodam em paralelo.
       const [xml, htmlXml] = await Promise.all([
@@ -681,11 +335,8 @@ export async function pdfToDocx(input: Uint8Array, originalName = "documento") {
           return readFile(layoutPath, "utf8");
         })(),
         (async () => {
-          if (!renderImages) return "";
-          // Só renderiza as páginas com pdftohtml quando existem imagens raster:
-          // em documentos só de texto isso economiza tempo e memória.
-          if (!(await pdfHasRasterImages(inputPath))) return "";
-          return readPageImages(directory, path.join(directory, "html"), inputPath, htmlConverter);
+          // Font/style extraction is needed even on pages without raster images.
+          return readPageImages(path.join(directory, "html"), inputPath, htmlConverter, renderImages);
         })(),
       ]);
       pages = parseLayout(xml, htmlXml);
@@ -698,10 +349,11 @@ export async function pdfToDocx(input: Uint8Array, originalName = "documento") {
     const hasText = pages.some((page) => page.texts.some((item) => item.segments.some((segment) => segment.text.trim())));
     if (pages.length && (hasText || assets.size)) {
       // Extrai vetores (linhas/retângulos) do PDF para desenhar bordas e grades.
-      // Em documentos muito grandes pulamos essa etapa (cara em CPU) para não
-      // estourar o tempo limite do servidor: as tabelas já têm bordas próprias.
-      const maxVectorPages = Number(process.env.PDF_TO_WORD_MAX_VECTOR_PAGES || 40);
+      // Operators may explicitly cap artwork extraction; the default preserves
+      // all pages instead of silently dropping grids on documents over 40 pages.
+      const maxVectorPages = Number(process.env.PDF_TO_WORD_MAX_VECTOR_PAGES || Infinity);
       const vectors = pages.length <= maxVectorPages ? await extractPdfVectors(input) : [];
+      const artwork = await renderDocxArtwork(pages, vectors, directory);
       const documentOptions = {
         creator: "PDF Master Pro",
         title: originalName,
@@ -710,9 +362,10 @@ export async function pdfToDocx(input: Uint8Array, originalName = "documento") {
       };
       // Documentos longos são montados em blocos: o gráfico de objetos do DOCX
       // inteiro consome muita memória e pode derrubar o processo em produção.
-      const chunkSize = Number(process.env.PDF_TO_WORD_CHUNK_PAGES || 40);
+      const configuredChunkSize = Number(process.env.PDF_TO_WORD_CHUNK_PAGES || 40);
+      const chunkSize = Number.isFinite(configuredChunkSize) && configuredChunkSize >= 1 ? Math.floor(configuredChunkSize) : 40;
       let buffer: Uint8Array;
-      if (!assets.size && pages.length > chunkSize) {
+      if (!assets.size && !artwork.size && pages.length > chunkSize) {
         const chunks: Uint8Array[] = [];
         for (let start = 0; start < pages.length; start += chunkSize) {
           const part = new Document({ ...documentOptions, sections: layoutSections(pages.slice(start, start + chunkSize), assets) });
@@ -720,12 +373,8 @@ export async function pdfToDocx(input: Uint8Array, originalName = "documento") {
         }
         buffer = await mergeDocxBodies(chunks);
       } else {
-        const document = new Document({ ...documentOptions, sections: layoutSections(pages, assets) });
+        const document = new Document({ ...documentOptions, sections: layoutSections(pages, assets, artwork) });
         buffer = await Packer.toBuffer(document);
-      }
-      // Injeta formas VML (bordas/linhas do PDF) no document.xml para fidelidade visual.
-      if (vectors.some((v) => v.lines.length || v.rects.length)) {
-        buffer = await injectVmlIntoDocx(buffer, vectors);
       }
       return buffer;
     }

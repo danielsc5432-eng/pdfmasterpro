@@ -1,9 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthorizedPayment, getPayment, getPreapproval, mapPreapprovalStatus, mercadopagoConfigured, verifyWebhookSignature } from "@/lib/billing/mercadopago";
 import { createSubscription, findSubscriptionByProviderId, recordBillingEvent, updateSubscription, type Subscription } from "@/lib/db/subscriptions";
-import { getPlan } from "@/lib/plans";
+import { getPlan, PLANS } from "@/lib/plans";
+import { addBillingMonths } from "@/lib/billing/period";
 
 export const runtime = "nodejs";
+
+class BillingValidationError extends Error {}
+
+function validateAmount(amount: number | undefined, currency: string | undefined, expectedCents: number) {
+  if (!Number.isFinite(amount) || Math.round(amount! * 100) !== expectedCents || currency !== "BRL") {
+    throw new BillingValidationError("Valor ou moeda não corresponde ao plano contratado.");
+  }
+}
 
 /**
  * Sincroniza uma compra avulsa (Checkout Pro).
@@ -15,6 +24,8 @@ async function syncPayment(paymentId: string) {
   const payment = await getPayment(paymentId);
   const openId = payment.external_reference;
   if (!openId) return null;
+  const amountCents = Math.round((payment.transaction_amount ?? NaN) * 100);
+  const paidPlan = PLANS.find((plan) => plan.purchasable && plan.priceCents === amountCents);
 
   let record: Subscription | null = await findSubscriptionByProviderId("mercadopago-checkout", paymentId);
 
@@ -27,7 +38,9 @@ async function syncPayment(paymentId: string) {
   }
 
   if (!record) {
-    const plan = getPlan(payment.transaction_amount === 149.9 ? "premium-annual" : "premium-monthly");
+    if (!paidPlan) throw new BillingValidationError("Valor pago não corresponde a um plano disponível.");
+    validateAmount(payment.transaction_amount, payment.currency_id, paidPlan.priceCents);
+    const plan = paidPlan;
     await createSubscription({
       openId,
       planId: plan.id,
@@ -41,22 +54,27 @@ async function syncPayment(paymentId: string) {
     record = await findSubscriptionByProviderId("mercadopago-checkout", paymentId);
   }
 
-  if (!record) return null;
+  if (!record) throw new Error("Não foi possível persistir a assinatura do pagamento.");
+  if (record.openId !== openId) throw new BillingValidationError("O pagamento pertence a outra conta.");
 
   if (payment.status === "approved") {
+    validateAmount(payment.transaction_amount, payment.currency_id, record.amountCents);
+    // Mercado Pago retries notifications. One payment grants one fixed period.
+    if (record.providerSubscriptionId === paymentId && record.status === "authorized" && record.currentPeriodEnd) return "authorized";
     const months = record.frequencyType === "months" ? record.frequency : 1;
-    const periodEnd = new Date();
-    periodEnd.setMonth(periodEnd.getMonth() + months);
+    const approvedAt = payment.date_approved ? new Date(payment.date_approved) : record.startedAt ?? new Date();
+    if (!Number.isFinite(approvedAt.getTime())) throw new BillingValidationError("Data de aprovação inválida.");
+    const periodEnd = addBillingMonths(approvedAt, months);
     await updateSubscription(record.id, {
       status: "authorized",
-      startedAt: record.startedAt ?? new Date(),
+      startedAt: record.startedAt ?? approvedAt,
       currentPeriodEnd: periodEnd,
       providerSubscriptionId: paymentId,
     });
     return "authorized";
   }
 
-  if (payment.status === "rejected" || payment.status === "cancelled") {
+  if (["rejected", "cancelled", "refunded", "charged_back"].includes(payment.status || "")) {
     await updateSubscription(record.id, { status: payment.status === "rejected" ? "rejected" : "cancelled", cancelledAt: new Date() });
     return payment.status;
   }
@@ -72,6 +90,7 @@ async function syncPreapproval(preapprovalId: string) {
     const annual = preapproval.auto_recurring?.frequency === 12;
     const plan = getPlan(annual ? "premium-annual" : "premium-monthly");
     const amount = Math.round((preapproval.auto_recurring?.transaction_amount ?? plan.priceCents / 100) * 100);
+    validateAmount(preapproval.auto_recurring?.transaction_amount, preapproval.auto_recurring?.currency_id, plan.priceCents);
     await createSubscription({
       openId: preapproval.external_reference,
       planId: plan.id,
@@ -85,10 +104,13 @@ async function syncPreapproval(preapprovalId: string) {
     record = await findSubscriptionByProviderId("mercadopago", preapprovalId);
   }
 
-  if (!record) return null;
+  if (!record) throw new Error("Não foi possível localizar ou persistir a assinatura.");
   const status = mapPreapprovalStatus(preapproval.status);
+  if (preapproval.external_reference && preapproval.external_reference !== record.openId) throw new BillingValidationError("A assinatura pertence a outra conta.");
+  if (status === "authorized") validateAmount(preapproval.auto_recurring?.transaction_amount, preapproval.auto_recurring?.currency_id, record.amountCents);
   const nextPayment = preapproval.auto_recurring?.next_payment_date;
-  const periodEnd = nextPayment ? new Date(nextPayment) : record.currentPeriodEnd;
+  const periodEnd = nextPayment ? new Date(nextPayment) : record.currentPeriodEnd ?? addBillingMonths(record.startedAt ?? new Date(), record.frequency);
+  if (!Number.isFinite(periodEnd.getTime())) throw new BillingValidationError("Período de assinatura inválido.");
   const revoked = status === "cancelled" || status === "expired" || status === "rejected";
   await updateSubscription(record.id, {
     status,
@@ -109,7 +131,10 @@ export async function POST(request: NextRequest) {
 
   const params = request.nextUrl.searchParams;
   const dataFromBody = (payload?.data as Record<string, unknown> | undefined)?.id;
-  const topic = String(params.get("type") || params.get("topic") || payload?.type || payload?.topic || "").trim();
+  // Webhook JSON identifies the resource; legacy IPN uses query parameters.
+  // The simulator can send a stale query type alongside a preapproval body.
+  // Resource signatures and provider-side ownership/amount checks still apply.
+  const topic = String(payload?.type || payload?.topic || params.get("type") || params.get("topic") || "").trim();
   const resourceId = String(params.get("data.id") || params.get("id") || dataFromBody || "") || null;
 
   const secret = process.env.MERCADOPAGO_WEBHOOK_SECRET?.trim() ?? "";
@@ -131,8 +156,11 @@ export async function POST(request: NextRequest) {
       await syncPayment(resourceId);
     }
   } catch (error) {
-    // Sempre respondemos 200 para o Mercado Pago não entrar em ciclo de reenvios.
     console.warn("[pdfmaster] webhook do Mercado Pago:", error instanceof Error ? error.message : error);
+    // Do not acknowledge a failed write/provider lookup: the notification must
+    // remain eligible for retry rather than silently losing Premium activation.
+    if (error instanceof BillingValidationError) return NextResponse.json({ error: "Dados da cobrança não correspondem à assinatura." }, { status: 422 });
+    return NextResponse.json({ error: "Não foi possível sincronizar a assinatura. Tente novamente." }, { status: 503 });
   }
 
   return NextResponse.json({ ok: true });

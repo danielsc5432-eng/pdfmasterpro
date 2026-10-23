@@ -1,5 +1,11 @@
 # Implantação
 
+## Conversão PDF para Word
+
+O caminho padrão reconstrói o layout por coordenadas e exige Poppler (`pdftotext`, `pdftohtml` e `pdftoppm`). O renderizador também preserva bordas e preenchimentos em uma camada gráfica, mantendo os textos editáveis. O reflow do Microsoft Word é opcional por `PDF_TO_WORD_NATIVE_REFLOW=1`; as referências abaixo ao Word como motor padrão descrevem a configuração anterior para PDF→Word. Word→PDF continua usando Word quando disponível, com LibreOffice como reserva.
+
+Mudanças nos processadores precisam ser publicadas no worker externo, quando configurado. Um deploy isolado da Vercel não altera o código desse worker.
+
 ## Build
 
 O container instala dependências com `pnpm-lock.yaml`, executa `pnpm build` e sobe `pnpm start` na porta 3000 (ou `PORT`). Antes de iniciar uma versão com alterações de schema, execute `pnpm db:migrate` com `DATABASE_URL`; o runner é aditivo e idempotente.

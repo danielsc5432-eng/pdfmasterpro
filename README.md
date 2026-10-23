@@ -18,6 +18,8 @@ Para conferir as ferramentas de ponta a ponta contra o servidor em execução, u
 
 ## Ferramentas funcionais
 
+PDF para Word usa reconstrução por posições para manter textos editáveis, imagens e grades nas páginas de origem. Linhas e preenchimentos são uma camada gráfica separada, não uma tabela editável do Word. O reflow do Microsoft Word pode ser habilitado explicitamente com `PDF_TO_WORD_NATIVE_REFLOW=1`; diferenças de layout continuam possíveis.
+
 Juntar, dividir, imagens para PDF, PDF↔Word, OCR, extração de texto, compressão, marca d’água, numeração, assinatura visual, proteção por senha, metadados e redação rasterizada estão conectados ao backend real.
 
 As limitações são honestas: PDF para Word e Word para PDF podem alterar layouts complexos; OCR pode conter erros; assinatura visual não é assinatura digital criptográfica; redação recria a página como imagem para remover o conteúdo da área, sacrificando texto editável.

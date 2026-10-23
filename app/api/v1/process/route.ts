@@ -26,6 +26,7 @@ function planLabel(plan: Plan) { return plan.id === "free" ? "plano grátis" : "
 export async function POST(request: NextRequest) {
   const tool = request.nextUrl.searchParams.get("tool"); if (!tool) return errorResponse("Selecione uma ferramenta de processamento.");
   const toolDefinition = getTool(tool);
+  if (!toolDefinition) return errorResponse("Ferramenta desconhecida.", 404);
   const entitlements = await resolveEntitlements(request);
   const limits = entitlements.plan.limits;
 
@@ -66,10 +67,10 @@ export async function POST(request: NextRequest) {
       const headers = new Headers(response.headers);
       // O fetch já entrega o corpo decodificado: cabeçalhos de entidade do upstream ficariam inconsistentes.
       headers.delete("transfer-encoding");
+      const outputBytes = Number(headers.get("content-length") || 0);
       headers.delete("content-length");
       headers.delete("content-encoding");
       const outputType = (headers.get("content-type") || "application/octet-stream").slice(0, 100);
-      const outputBytes = Number(headers.get("content-length") || 0);
       await (response.ok ? markProcessingTaskCompleted(taskId, Number.isFinite(outputBytes) ? outputBytes : 0, outputType) : markProcessingTaskFailed(taskId, `worker_${response.status}`)).catch(() => undefined);
       return finish(new NextResponse(response.body, { status: response.status, headers }), request, session);
     } catch (error) {

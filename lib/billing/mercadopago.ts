@@ -77,6 +77,7 @@ export type PreferencePayment = {
   status_detail?: string;
   external_reference?: string;
   transaction_amount?: number;
+  currency_id?: string;
   date_approved?: string;
   payer?: { id?: number; email?: string };
 };
@@ -157,10 +158,10 @@ export function mapPreapprovalStatus(status: string | null | undefined): Subscri
 
 /** Valida a assinatura `x-signature` enviada pelo webhook do Mercado Pago. */
 export function verifyWebhookSignature(input: { signatureHeader: string | null; requestId: string | null; dataId: string | null; secret: string }): boolean {
-  if (!input.secret) return true; // sem segredo configurado não há como validar; aceitamos e registramos.
+  if (!input.secret) return false; // Fail closed when webhook authentication is unavailable.
   const parts = Object.fromEntries((input.signatureHeader ?? "").split(",").map((piece) => piece.split("=").map((value) => value.trim()) as [string, string]).filter(([key]) => key));
   const ts = parts.ts; const v1 = parts.v1;
-  if (!ts || !v1) return false;
+  if (!ts || !v1 || !/^[0-9a-f]{64}$/i.test(v1)) return false;
   const manifest = `id:${(input.dataId ?? "").toLowerCase()};request-id:${input.requestId ?? ""};ts:${ts};`;
   const expected = createHmac("sha256", input.secret).update(manifest).digest("hex");
   return expected.length === v1.length && timingSafeEqual(Buffer.from(expected), Buffer.from(v1));

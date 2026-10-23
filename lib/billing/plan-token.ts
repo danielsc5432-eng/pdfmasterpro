@@ -32,7 +32,7 @@ export function readSignedPlan(headers: Headers): Plan | null {
   if (!secret) return null;
   const payload = headers.get(PLAN_HEADER);
   const signature = headers.get(PLAN_SIGNATURE_HEADER);
-  if (!payload || !signature) return null;
+  if (!payload || !signature || !/^[A-Za-z0-9_-]{43}$/.test(signature)) return null;
   const expected = sign(payload, secret);
   if (expected.length !== signature.length || !timingSafeEqual(Buffer.from(expected), Buffer.from(signature))) return null;
   const [planId, expRaw] = payload.split(".");

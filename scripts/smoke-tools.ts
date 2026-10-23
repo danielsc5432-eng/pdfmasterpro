@@ -1,3 +1,5 @@
+import assert from "node:assert/strict";
+import { signPlanHeaders } from "../lib/billing/plan-token";
 import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
@@ -56,13 +58,18 @@ async function call(tool: string, files: { name: string; bytes: Uint8Array; type
   const form = new FormData();
   for (const file of files) form.append("files", new Blob([file.bytes as BlobPart], { type: file.type }), file.name);
   for (const [key, value] of Object.entries(fields)) form.append(key, value);
-  const response = await fetch(`${BASE}/api/v1/process?tool=${tool}`, { method: "POST", body: form });
+  const response = await fetch(`${BASE}/api/v1/process?tool=${tool}`, { method: "POST", body: form, headers: process.env.SMOKE_PREMIUM === "1" ? signPlanHeaders("premium-monthly") || {} : {} });
   const bytes = new Uint8Array(await response.arrayBuffer());
   if (!response.ok) { let error = ""; try { error = JSON.parse(new TextDecoder().decode(bytes)).error; } catch { /* ignore */ } return { status: response.status, bytes, type: "", error }; }
   return { status: response.status, bytes, type: response.headers.get("content-type") || "" };
 }
 
 async function expect(tool: string, response: Response, check: (response: Response) => Promise<string> | string) {
+  console.log("CHECK " + tool + ": HTTP " + response.status);
+  if (process.env.SMOKE_PREMIUM !== "1" && /^(ocr-pdf|redigir-pdf)/.test(tool)) {
+    results.push({ tool, ok: response.status === 402, detail: "Premium access check: HTTP " + response.status });
+    return;
+  }
   if (response.status !== 200) { results.push({ tool, ok: false, detail: `HTTP ${response.status}: ${response.error || "sem detalhe"}` }); return; }
   try { results.push({ tool, ok: true, detail: await check(response) }); } catch (error) { results.push({ tool, ok: false, detail: error instanceof Error ? error.message : String(error) }); }
 }
@@ -87,7 +94,7 @@ async function main() {
     const file = (name: string, bytes: Uint8Array, type: string) => ({ name, bytes, type });
     const pdf = (name: string, bytes: Uint8Array) => file(name, bytes, "application/pdf");
 
-    await expect("juntar-pdf", await call("juntar-pdf", [pdf("a.pdf", pdf1), pdf("b.pdf", pdf3)]), async (response) => `PDF com ${(await PDFDocument.load(response.bytes)).getPageCount()} páginas`);
+    await expect("juntar-pdf", await call("juntar-pdf", [pdf("a.pdf", pdf1), pdf("b.pdf", pdf3)]), async (response) => { const count = (await PDFDocument.load(response.bytes)).getPageCount(); assert.ok(count > 0); return "PDF com " + count + " paginas"; });
 
     await expect("dividir-pdf (intervalo)", await call("dividir-pdf", [pdf("doc.pdf", pdf3)], { mode: "range", start: "2", end: "3" }), async (response) => `PDF com ${(await PDFDocument.load(response.bytes)).getPageCount()} páginas`);
 
@@ -103,14 +110,16 @@ async function main() {
 
     await expect("pdf-para-imagens", await call("pdf-para-imagens", [pdf("doc.pdf", pdf3)], { start: "1", end: "2" }), async (response) => `ZIP com ${Object.keys((await JSZip.loadAsync(response.bytes)).files).length} imagens`);
 
-    await expect("comprimir-pdf", await call("comprimir-pdf", [pdf("doc.pdf", pdf3)]), async (response) => `PDF com ${(await PDFDocument.load(response.bytes)).getPageCount()} páginas (${response.bytes.length} bytes)`);
+    await expect("comprimir-pdf", await call("comprimir-pdf", [pdf("doc.pdf", pdf3)]), async (response) => { assert.ok(response.bytes.length <= pdf3.length, "Compression increased the file size"); assert.equal((await PDFDocument.load(response.bytes)).getPageCount(), 3); return "3 pages; " + response.bytes.length + " bytes (input: " + pdf3.length + ")"; });
 
     await expect("pdf-para-word", await call("pdf-para-word", [pdf("doc.pdf", pdf3)]), async (response) => {
       const zip = await JSZip.loadAsync(response.bytes);
       const entry = zip.file("word/document.xml");
       if (!entry) throw new Error("DOCX sem word/document.xml");
       const xml = await entry.async("string");
-      const text = (xml.match(/<w:t[^>]*>[\s\S]*?<\/w:t>/g) || []).map((item) => item.replace(/<[^>]+>/g, "")).join(" ");
+      // Match text elements, not w:tabs/w:tab. Position-preserving DOCX uses
+      // tab stops between words, which are whitespace rather than lost text.
+      const text = (xml.match(/<w:t(?:\s[^>]*)?>[\s\S]*?<\/w:t>/g) || []).map((item) => item.replace(/<[^>]+>/g, "")).join(" ").replace(/\s+/g, " ").trim();
       if (!text.includes("pagina 3")) throw new Error("o texto do PDF não chegou ao DOCX");
       if (!text.includes("linha de continuacao do paragrafo")) throw new Error("texto secundário ausente no DOCX");
       const frames = xml.match(/<w:framePr[^>]*>/g) || [];
@@ -147,9 +156,29 @@ async function main() {
 
     await expect("redigir-pdf", await call("redigir-pdf", [pdf("doc.pdf", pdf3)], { page: "2", x: "36", y: "36", width: "200", height: "60" }), async (response) => `PDF com ${(await PDFDocument.load(response.bytes)).getPageCount()} páginas, apenas a página 2 rasterizada`);
 
+
+    await expect("redigir-pdf (rotacionado)", await call("redigir-pdf", [pdf("rotated.pdf", rotated)], { page: "1", x: "36", y: "36", width: "100", height: "50" }), async (response) => {
+      const page = (await PDFDocument.load(response.bytes)).getPage(0);
+      assert.equal(page.getWidth(), 560);
+      assert.equal(page.getHeight(), 400);
+      assert.equal(page.getRotation().angle, 0);
+      return "landscape orientation preserved after rasterization";
+    });
+
     await expect("validar arquivo falso", await call("juntar-pdf", [file("fake.pdf", new TextEncoder().encode("não é pdf"), "application/pdf")]), (response) => { throw new Error(`esperava rejeição, recebeu HTTP ${response.status}`); });
     results[results.length - 1].ok = results[results.length - 1].detail.includes("HTTP 422");
-    results[results.length - 1].detail = `rejeitado corretamente (HTTP 422)`;
+    results[results.length - 1].detail = "HTTP " + (results[results.length - 1].ok ? "422 (rejeitado corretamente)" : "inesperado");
+
+    for (const [label, slug, fields, status] of [
+      ["ferramenta desconhecida", "inexistente", {}, 404],
+      ["rotacao invalida", "girar-pdf", { angle: "45" }, 422],
+      ["pagina fora do documento", "dividir-pdf", { start: "10", end: "12" }, 422],
+      ["confirmacao de senha", "proteger-pdf", { password: "segredo123", passwordConfirm: "outro" }, 400],
+      ["senha curta", "proteger-pdf", { password: "123", passwordConfirm: "123" }, 400],
+    ] as const) {
+      const response = await call(slug, [pdf("doc.pdf", pdf1)], fields);
+      results.push({ tool: label, ok: response.status === status, detail: "HTTP " + response.status + " (esperado " + status + ")" });
+    }
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

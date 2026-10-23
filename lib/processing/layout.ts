@@ -325,7 +325,7 @@ export function joinLayoutPages(bboxPages: BboxPage[], htmlPages: HtmlPage[]): L
     }
     
     // Sort by reading order
-    merged.sort((a, b) => b.y - a.y || a.x - b.x); // top to bottom
+    merged.sort((a, b) => a.y - b.y || a.x - b.x); // bbox coordinates start at the top
     return { width: page.width, height: page.height, texts: merged, images: html?.images ?? [] };
   });
 }

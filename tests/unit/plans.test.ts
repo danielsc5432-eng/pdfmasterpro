@@ -78,6 +78,8 @@ test("cabeçalho de plano só é aceito com assinatura HMAC válida", () => {
   assert.equal(readSignedPlan(tampered), null);
   const forged = new Headers({ [PLAN_HEADER]: "premium-annual.9999999999", [PLAN_SIGNATURE_HEADER]: "assinatura-falsa" });
   assert.equal(readSignedPlan(forged), null);
+  const unicodeSignature = new Headers({ [PLAN_HEADER]: "premium-annual.9999999999", [PLAN_SIGNATURE_HEADER]: "é".repeat(43) });
+  assert.equal(readSignedPlan(unicodeSignature), null);
   const expired = new Headers(signPlanHeaders("premium-annual", -10)!);
   assert.equal(readSignedPlan(expired), null);
 
