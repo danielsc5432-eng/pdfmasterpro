@@ -34,6 +34,20 @@ def generate(directory):
         doc.save(directory / "rotated-page.pdf", no_new_id=True)
         page.set_rotation(270)
         doc.save(directory / "rotated-page-270.pdf", no_new_id=True)
+    with fitz.open() as mixed:
+        page=mixed.new_page(width=595,height=842)
+        page.insert_text((40,60),"MIXED DOCUMENT credit +1234.56",fontsize=12)
+        page.insert_text((40,95),"Editable horizontal flow with separate source words",fontsize=11)
+        page=mixed.new_page(width=400,height=600)
+        page.insert_text((40,80),"Rotated debit -345.67",fontsize=12)
+        page.set_rotation(90)
+        page=mixed.new_page(width=400,height=600)
+        page.draw_rect(fitz.Rect(40,40,360,560),color=(0,0,1),width=2)
+        page=mixed.new_page(width=595,height=842)
+        for index in range(6):
+            page.insert_text((40,60+index*25),f"Left item {index+1}: 100.50",fontsize=11)
+            page.insert_text((320,63+index*25),f"Right item {index+1}: -20.25",fontsize=11)
+        mixed.save(directory/"mixed-renderers.pdf",no_new_id=True)
     with fitz.open() as native, fitz.open() as scanned:
         page = native.new_page(width=595, height=842)
         page.insert_text((50, 90), "SCANNED FINANCIAL STATEMENT", fontsize=18)

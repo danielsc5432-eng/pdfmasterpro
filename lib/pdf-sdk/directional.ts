@@ -3,7 +3,7 @@ import { layoutSections, type LayoutReconstructor } from "../processing/docx";
 import { fitNativeRun } from "./font-fit";
 
 /** Independent editable blocks, including quarter-turn text. No raster text substitution. */
-export const renderDirectional: LayoutReconstructor = async ({pages,assets,artwork}) => {
+export async function directionalSections({pages,assets,artwork}:Parameters<LayoutReconstructor>[0]) {
   const supported=(angle:number)=>[0,90,270].includes(angle);
   const sections=layoutSections(pages.map(page=>({...page,texts:page.texts.filter(item=>!supported(item.rotation??0))})),assets,artwork);
   const none={style:BorderStyle.NONE,size:0,color:"FFFFFF"};
@@ -25,5 +25,7 @@ export const renderDirectional: LayoutReconstructor = async ({pages,assets,artwo
       rows:[new TableRow({cantSplit:true,height:{value:height,rule:HeightRule.EXACT},children:[new TableCell({width:{size:width,type:WidthType.DXA},margins:{top:0,bottom:0,left:0,right:0},textDirection:angle===90?TextDirection.TOP_TO_BOTTOM_RIGHT_TO_LEFT:angle===270?TextDirection.BOTTOM_TO_TOP_LEFT_TO_RIGHT:TextDirection.LEFT_TO_RIGHT_TOP_TO_BOTTOM,children:[paragraph]})]})]});
     (sections[index].children as (Paragraph|Table)[]).push(table);
   }
-  return new Uint8Array(await Packer.toBuffer(new Document({creator:"PDF Master Pro SDK",sections})));
-};
+  return sections;
+}
+
+export const renderDirectional: LayoutReconstructor = async context => new Uint8Array(await Packer.toBuffer(new Document({creator:"PDF Master Pro SDK",sections:await directionalSections(context)})));

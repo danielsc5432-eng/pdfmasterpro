@@ -4,7 +4,7 @@ import { sourceDocument, type SourceSpan } from "./model";
 import { fitNativeRun } from "./font-fit";
 
 /** Editable flow rows rather than floating frames. Source artwork remains behind text. */
-export const renderPageGrid: LayoutReconstructor = async ({pages,assets,artwork}) => {
+export async function pageGridSections({pages,assets,artwork}:Parameters<LayoutReconstructor>[0]) {
   const source = sourceDocument(pages.map(page=>({...page,texts:page.texts.filter(item=>(item.rotation??0)===0)})));
   const sections = layoutSections(pages.map(page=>({...page,texts:page.texts.filter(item=>(item.rotation??0)!==0)})),assets,artwork);
   const none={style:BorderStyle.NONE,size:0,color:"FFFFFF"};
@@ -27,6 +27,9 @@ export const renderPageGrid: LayoutReconstructor = async ({pages,assets,artwork}
       const spans=[...group.spans].sort((a,b)=>a.x-b.x);
       const height=(groups[r+1]?.y??Math.min(page.height-1,group.y+Math.max(...spans.map(s=>s.height))+3))-group.y;
       if(height<=0)throw new Error("Unsupported row geometry");
+      // Staggered columns can have baselines only a few points apart. A flow
+      // row that short would clip glyphs; let the page use positioned blocks.
+      if(spans.some(span=>span.baseline!==undefined)&&height<Math.max(...spans.map(span=>span.height))*.75)throw new Error("Overlapping native rows require positioned blocks");
       const runs:TextRun[]=[];
       const tabs:{type:typeof TabStopType.LEFT;position:number}[]=[];
       for(const span of spans) {
@@ -43,5 +46,7 @@ export const renderPageGrid: LayoutReconstructor = async ({pages,assets,artwork}
     const table=new Table({rows,width:{size:width,type:WidthType.DXA},columnWidths:[width],layout:TableLayoutType.FIXED,margins:{top:0,bottom:0,left:0,right:0},borders:{top:none,bottom:none,left:none,right:none,insideHorizontal:none,insideVertical:none}});
     (sections[index].children as (Paragraph|Table)[]).push(table);
   }
-  return new Uint8Array(await Packer.toBuffer(new Document({creator:"PDF Master Pro SDK",sections})));
-};
+  return sections;
+}
+
+export const renderPageGrid: LayoutReconstructor = async context => new Uint8Array(await Packer.toBuffer(new Document({creator:"PDF Master Pro SDK",sections:await pageGridSections(context)})));

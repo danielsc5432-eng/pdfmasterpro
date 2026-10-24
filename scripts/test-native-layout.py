@@ -16,6 +16,20 @@ def load(name):
 
 
 class NativeLayoutTest(unittest.TestCase):
+    def test_profile_prioritizes_directional_and_form_engines(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source=str(Path(directory)/"source.pdf")
+            with fitz.open() as doc:
+                page=doc.new_page()
+                page.insert_text((40,80),"CPF 123.45")
+                doc.save(source)
+            self.assertEqual(load("pdf2docx-convert").analyze(source)["primary"],"page-grid")
+            with fitz.open(source) as doc:
+                doc[0].set_rotation(90)
+                target=str(Path(directory)/"rotated.pdf")
+                doc.save(target)
+            self.assertEqual(load("pdf2docx-convert").analyze(target)["primary"],"native")
+
     def test_rotation_uses_displayed_geometry_and_keeps_numeric_sign(self):
         with tempfile.TemporaryDirectory() as directory:
             source=str(Path(directory)/"source.pdf")

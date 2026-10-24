@@ -33,7 +33,9 @@ jobs:
       - name: Verify both quarter turns
         run: pnpm test:conversion --case=rotated-page --strict --keep-candidates
       - name: Measure the complete public and synthetic corpus
-        run: pnpm test:conversion --public --keep-candidates
+        run: pnpm test:conversion --public --keep-candidates --baseline
+      - name: Verify automatic routing on a mixed document
+        run: pnpm test:conversion --case=mixed-renderers --automatic --strict
       - name: Render synthetic diagnostic candidates
         if: always()
         run: |

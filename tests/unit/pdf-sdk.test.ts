@@ -1,5 +1,6 @@
 import test from "node:test";
 import { renderDirectional } from "../../lib/pdf-sdk/directional";
+import { renderAdaptivePages } from "../../lib/pdf-sdk/native";
 import assert from "node:assert/strict";
 import JSZip from "jszip";
 import type { LayoutPage } from "../../lib/processing/layout";
@@ -66,6 +67,17 @@ test("quarter-turn text remains editable with native Word text direction",async(
   assert.match(xml,/<w:textDirection w:val="tbRl"/);
   assert.equal(xml.match(/Descri/g)?.length,1);
   assert.match(xml,/w:tblpX="400"/);
+});
+
+test("mixed documents choose Word flow separately for every page",async()=>{
+  const horizontal=page(),vertical=page();
+  vertical.texts=vertical.texts.slice(0,1).map(item=>({...item,rotation:90}));
+  const zip=await JSZip.loadAsync(await renderAdaptivePages({pages:[horizontal,vertical,{width:400,height:600,texts:[],images:[]}],assets:new Map(),artwork:new Map()}));
+  const xml=await zip.file("word/document.xml")!.async("string");
+  assert.equal(xml.match(/<w:pgSz /g)?.length,3);
+  assert.equal(xml.match(/<w:textDirection /g)?.length,1);
+  assert.equal(xml.match(/1\.234,56/g)?.length,1);
+  assert.match(xml,/w:pos="4000"/);
 });
 test("Docling geometry references existing source amounts rather than generating replacements",async()=>{
   const cells=[{l:10,t:10,r:150,b:40},{l:180,t:10,r:300,b:40},{l:10,t:50,r:150,b:80},{l:180,t:50,r:300,b:80}].map((bbox,i)=>({bbox:{...bbox,coord_origin:"TOPLEFT"},start_row_offset_idx:Math.floor(i/2),end_row_offset_idx:Math.floor(i/2)+1,start_col_offset_idx:i%2,end_col_offset_idx:i%2+1}));

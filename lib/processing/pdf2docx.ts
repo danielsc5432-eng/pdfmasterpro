@@ -28,16 +28,21 @@ export async function structuralPdfToDocx(input: Uint8Array, timeout = 240000) {
   } finally { await rm(directory, { recursive: true, force: true }); }
 }
 
-export async function inspectConversionMode(input: Uint8Array): Promise<"layout" | "tables"> {
+export type ConversionProfile={mode:"layout"|"tables";primary:"layout"|"page-grid"|"native"|"tables";scan:boolean};
+export async function inspectConversionProfile(input: Uint8Array): Promise<ConversionProfile> {
   const python = process.env.PDF_TO_WORD_PYTHON || (process.platform === "win32" ? "python" : "python3");
   const directory = await mkdtemp(path.join(os.tmpdir(), "pdfmaster-inspect-"));
   try {
     const source = path.join(directory, "input.pdf");
     await writeFile(source, await extractionPdf(input));
     const { stdout } = await execFile(python, [path.join(process.cwd(), "scripts", "pdf2docx-convert.py"), source, "--analyze"], { timeout: 20000, windowsHide: true, maxBuffer: 1024 * 1024 });
-    const result = JSON.parse(stdout) as { mode?: string };
-    return result.mode === "tables" ? "tables" : "layout";
+    const result = JSON.parse(stdout) as { mode?: string;primary?:string;reason?:string };
+    const mode=result.mode==="tables"?"tables":"layout";
+    const primary=["layout","page-grid","native","tables"].includes(result.primary??"")?result.primary as ConversionProfile["primary"]:mode;
+    return {mode,primary,scan:result.reason==="scan"};
   } catch {
-    return "layout";
+    return {mode:"layout",primary:"layout",scan:false};
   } finally { await rm(directory, { recursive: true, force: true }); }
 }
+
+export async function inspectConversionMode(input:Uint8Array):Promise<"layout"|"tables">{return(await inspectConversionProfile(input)).mode;}

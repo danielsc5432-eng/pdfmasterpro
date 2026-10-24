@@ -149,9 +149,13 @@ function textParagraph(items: LayoutTextItem[], pageWidth: number) {
   // PDF — sem isso o texto fica alguns pontos abaixo (e o desvio variava com o
   // corpo da fonte, quebrando o alinhamento).
   const baselineShift = item.font.size * 0.24;
+  // MuPDF exposes the actual baseline, while Poppler exposes a different top
+  // box. Do not reuse the Poppler offset for native glyph boxes: it shifts text
+  // upward by several points, especially on staggered columns.
+  const frameY=item.baseline!==undefined&&(item.rotation??0)===0?item.baseline-item.font.size*.96:item.y-baselineShift;
 
   return new Paragraph({
-    frame: frameAt(item.x, item.y - baselineShift, frameWidth),
+    frame: frameAt(item.x, frameY, frameWidth),
     spacing,
     tabStops: tabStops.length ? tabStops : undefined,
     children,

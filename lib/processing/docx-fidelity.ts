@@ -22,6 +22,7 @@ export function unsafeFidelity(report: FidelityReport): boolean {
 
 export function betterFidelity(candidate: FidelityReport, current: FidelityReport): boolean {
   if (unsafeFidelity(candidate) !== unsafeFidelity(current)) return !unsafeFidelity(candidate);
+  if ((fidelityStatus(candidate)==="checked") !== (fidelityStatus(current)==="checked")) return fidelityStatus(candidate)==="checked";
   return fidelityScore(candidate) > fidelityScore(current);
 }
 

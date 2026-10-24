@@ -1,7 +1,11 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import JSZip from "jszip";
+import { decodeEntities } from "../lib/processing/layout";
+import { baselineFailures, knownOcrTruth } from "./conversion-baseline";
 import { createPdfMasterSdk } from "../lib/pdf-sdk";
+import { checkedPdfToDocx } from "../lib/processing/docx-auto";
 import { betterFidelity, checkDocxFidelity, fidelityStatus, unsafeFidelity, type FidelityReport } from "../lib/processing/docx-fidelity";
 import { execFile } from "../lib/processing/system";
 
@@ -18,7 +22,7 @@ async function main() {
   await mkdir(directory,{recursive:true});
   const python=process.env.PDF_TO_WORD_PYTHON || (process.platform==="win32"?"python":"python3");
   await execFile(python,["scripts/generate-pdf-regression.py",directory],{timeout:30000,windowsHide:true});
-  const names=["signed-values.pdf","staggered-columns.pdf","mixed-sizes-blank.pdf","rotated-page.pdf","rotated-page-270.pdf","scanned-statement.pdf","searchable-scan.pdf","transparent-searchable-scan.pdf","skewed-low-contrast.pdf"];
+  const names=["signed-values.pdf","staggered-columns.pdf","mixed-sizes-blank.pdf","mixed-renderers.pdf","rotated-page.pdf","rotated-page-270.pdf","scanned-statement.pdf","searchable-scan.pdf","transparent-searchable-scan.pdf","skewed-low-contrast.pdf"];
   const manifest:{name:string;sha256:string;url?:string}[]=[];
   if(process.argv.includes("--public"))for(const fixture of upstream){
     const response=await fetch(fixture.url,{signal:AbortSignal.timeout(30000),redirect:"error"});
@@ -38,9 +42,12 @@ async function main() {
     const started=Date.now();let record;
     try{
       const sdk=createPdfMasterSdk({verify:async(pdf,word,budget)=>{if(process.argv.includes("--keep-candidates"))await writeFile(path.join(directory,name+`.candidate-${candidateIndex++}.docx`),word);const measured=await checkDocxFidelity(pdf,word,budget);if(measured)reports.push(measured);return measured;}});
-      const result=await sdk.convert(input,{name,signal:AbortSignal.timeout(300000)});
+      const result=process.argv.includes("--automatic")?await checkedPdfToDocx(input,name):await sdk.convert(input,{name,signal:AbortSignal.timeout(300000)});
       await writeFile(path.join(directory,name+".docx"),result.output);
-      record={name,outcome:result.status,engine:result.engine,report:result.report,audit:result.audit};
+      const zip=await JSZip.loadAsync(result.output);
+      const xml=await zip.file("word/document.xml")!.async("string");
+      const editable=[...xml.matchAll(/<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>/g)].map(match=>decodeEntities(match[1])).join(" ");
+      record={name,outcome:result.status,engine:"engine"in result?result.engine:"automatic",report:result.report,audit:"audit"in result?result.audit:undefined,ocrGroundTruth:knownOcrTruth(name,editable)};
     }catch{
       let best:FidelityReport|undefined;
       for(const report of reports)if(!best||betterFidelity(report,best))best=report;
@@ -55,6 +62,11 @@ async function main() {
   const summary={cases:outcomes.length,checked:outcomes.filter(r=>r.outcome==="checked").length,review:outcomes.filter(r=>r.outcome==="review").length,blocked:outcomes.filter(r=>r.outcome==="blocked").length,allChecked:outcomes.length>0&&outcomes.every(r=>r.outcome==="checked")};
   await writeFile(path.join(directory,`summary${suffix}.json`),JSON.stringify(summary,null,2));
   console.log(JSON.stringify(summary));
+  if(process.argv.includes("--baseline")){
+    const failures=baselineFailures(results as {name:string;outcome:string;ocrGroundTruth?:{passed:boolean}}[]);
+    await writeFile(path.join(directory,`baseline${suffix}.json`),JSON.stringify({passed:!failures.length,failures},null,2));
+    if(failures.length){console.error(JSON.stringify({regressions:failures}));process.exitCode=1;}
+  }
   if(process.argv.includes("--strict")&&!summary.allChecked)process.exitCode=1;
 }
 main().catch(error=>{console.error(error instanceof Error?error.message:"Regression suite failed");process.exitCode=1;});

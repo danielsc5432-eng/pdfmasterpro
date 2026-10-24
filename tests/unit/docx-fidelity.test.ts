@@ -29,3 +29,11 @@ test("candidate selection prefers preserved numbers and matching pages",()=>{
   assert.equal(betterFidelity(missing,complete),false);
   assert.equal(betterFidelity(complete,missing),true);
 });
+
+test("a prettier review cannot replace a candidate that passed every approval requirement",()=>{
+  const checked={...good(),visualSimilarity:.91,worstPageSimilarity:.85};
+  const review={...good(),renderedTextCoverage:.97,visualSimilarity:1,worstPageSimilarity:1};
+  assert.equal(fidelityStatus(checked),"checked");
+  assert.equal(betterFidelity(review,checked),false);
+  assert.equal(betterFidelity(checked,review),true);
+});

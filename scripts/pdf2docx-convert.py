@@ -10,6 +10,7 @@ from pdf2docx import Converter
 
 
 def analyze(source: str) -> dict:
+    scan, form, directional, unicode_text = False, False, False, False
     with fitz.open(source) as document:
         if document.needs_pass:
             raise ValueError("PDF protegido por senha.")
@@ -19,10 +20,20 @@ def analyze(source: str) -> dict:
                 fitz.Rect(image["bbox"]).get_area() >= page.rect.get_area() * 0.5
                 for image in page.get_image_info()
             ):
-                return {"mode": "layout", "reason": "scan"}
+                scan = True
             if re.search(r"\b(?:CPF|CNPJ|MATR[IÍ]CULA|ASSINATURA|DECLARA[CÇ][AÃ]O)\b", text, re.I):
-                return {"mode": "layout", "reason": "form"}
-    return {"mode": "tables", "reason": "native"}
+                form = True
+            unicode_text |= any("\u3400" <= char <= "\u9fff" for char in text)
+            directional |= page.rotation in (90, 270)
+            if not directional:
+                directional |= any(abs(line["dir"][1]) > .99 for block in page.get_text("dict", flags=fitz.TEXTFLAGS_DICT & ~fitz.TEXT_PRESERVE_IMAGES)["blocks"] if block["type"] == 0 for line in block["lines"])
+    if scan:
+        return {"mode": "layout", "reason": "scan", "primary": "layout"}
+    if directional or unicode_text:
+        return {"mode": "layout", "reason": "directional" if directional else "unicode", "primary": "native"}
+    if form:
+        return {"mode": "layout", "reason": "form", "primary": "page-grid"}
+    return {"mode": "tables", "reason": "native", "primary": "tables"}
 
 
 def convert(source: str, destination: str) -> None:
