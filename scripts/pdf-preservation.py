@@ -3,6 +3,7 @@ import hashlib
 import json
 import sys
 import fitz
+from pdf_optimizer_policy import eligible
 
 
 def fields(page):
@@ -15,9 +16,7 @@ def annotations(page):
 
 def preserved(source,candidate):
     with fitz.open(source) as original,fitz.open(candidate) as result:
-        if original.needs_pass or result.needs_pass or original.get_sigflags()>0 or original.metadata.get("encryption"):
-            return False
-        if original.xref_get_key(original.pdf_catalog(),"Perms")[0]!="null":
+        if not eligible(original) or result.needs_pass:
             return False
         if len(original)!=len(result) or not len(original):
             return False

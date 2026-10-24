@@ -2,11 +2,12 @@
 import json
 import sys
 import fitz
+from pdf_optimizer_policy import eligible
 
 
 def optimize(source,output):
     with fitz.open(source) as document:
-        if document.needs_pass or document.get_sigflags()>0 or document.metadata.get("encryption"):
+        if not eligible(document):
             return False
         # Keep rich interactive/tagged graphs on the qpdf path. Do not simplify
         # them with a second engine whose rewrite could alter their behavior.

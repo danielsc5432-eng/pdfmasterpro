@@ -92,6 +92,24 @@ class OptimizerTest(unittest.TestCase):
             signed=str(self.root/"signature.pdf");doc.save(signed)
         self.assertFalse(load("pdf-preservation").preserved(signed,signed))
         self.assertFalse(load("pdf-optimize").optimize(signed,str(self.root/"optimized-signed.pdf")))
+    def test_archival_declarations_are_not_rewritten_without_conformance_validation(self):
+        source=self.source()
+        with fitz.open(source) as doc:
+            doc.set_xml_metadata('<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description xmlns:pdfaid="http://www.aiim.org/pdfa/ns/id/" pdfaid:part="1" pdfaid:conformance="B"/></rdf:RDF></x:xmpmeta>')
+            declared=str(self.root/"declared.pdf");doc.save(declared)
+        self.assertFalse(load("pdf-preservation").preserved(declared,declared))
+        self.assertFalse(load("pdf-optimize").optimize(declared,str(self.root/"optimized-declared.pdf")))
+    def test_attachment_bytes_cannot_silently_change(self):
+        source=self.source()
+        with fitz.open(source) as doc:
+            doc.embfile_add("attachment.txt",b"Preserve these bytes",filename="attachment.txt")
+            attached=str(self.root/"attached.pdf");doc.save(attached)
+        self.assertTrue(load("pdf-preservation").preserved(attached,attached))
+        with fitz.open(attached) as doc:
+            doc.embfile_del("attachment.txt")
+            doc.embfile_add("attachment.txt",b"Changed",filename="attachment.txt")
+            changed=str(self.root/"changed-attachment.pdf");doc.save(changed)
+        self.assertFalse(load("pdf-preservation").preserved(attached,changed))
 
 if __name__=="__main__":
     unittest.main()
