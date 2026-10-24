@@ -1,6 +1,7 @@
 import { BorderStyle, Document, HeightRule, LineRuleType, Packer, Paragraph, Table, TableCell, TableLayoutType, TableRow, TabStopType, TextRun, WidthType } from "docx";
 import { layoutSections, type LayoutReconstructor } from "../processing/docx";
 import { sourceDocument, type SourceSpan } from "./model";
+import { fitNativeRun } from "./font-fit";
 
 /** Editable flow rows rather than floating frames. Source artwork remains behind text. */
 export const renderPageGrid: LayoutReconstructor = async ({pages,assets,artwork}) => {
@@ -30,7 +31,12 @@ export const renderPageGrid: LayoutReconstructor = async ({pages,assets,artwork}
       const tabs:{type:typeof TabStopType.LEFT;position:number}[]=[];
       for(const span of spans) {
         if(span.x>0.1){tabs.push({type:TabStopType.LEFT,position:Math.round(span.x*20)});runs.push(new TextRun({text:"\t",size:2}));}
-        runs.push(new TextRun({text:span.text,font:span.font,size:Math.max(2,Math.round(span.size*2)),bold:span.bold,italics:span.italic,color:/^#?[0-9a-f]{6}$/i.test(span.color)?span.color.replace("#",""):"000000"}));
+        const native=span.baseline!==undefined;
+        const scale=native?await fitNativeRun(span.text,span.font,span.size,span.bold,span.italic,span.width):undefined;
+        runs.push(new TextRun({text:span.text,font:span.font,scale,size:Math.max(2,Math.round(span.size*2)),bold:span.bold,italics:span.italic,color:/^#?[0-9a-f]{6}$/i.test(span.color)?span.color.replace("#",""):"000000"}));
+        // An explicit small space keeps independent PDF words distinct even
+        // when a font substitute leaves too little gap for a PDF extractor.
+        if(native)runs.push(new TextRun({text:" ",size:2}));
       }
       rows.push(cell(height,new Paragraph({tabStops:tabs,spacing:{before:0,after:0,line:Math.max(20,Math.round(Math.max(...spans.map(s=>s.height))*20)),lineRule:LineRuleType.EXACT},children:runs})));
     }

@@ -1,5 +1,6 @@
 import { BorderStyle, Document, HeightRule, LineRuleType, Packer, Paragraph, Table, TableAnchorType, TableCell, TableLayoutType, TableRow, TextDirection, TextRun, WidthType } from "docx";
 import { layoutSections, type LayoutReconstructor } from "../processing/docx";
+import { fitNativeRun } from "./font-fit";
 
 /** Independent editable blocks, including quarter-turn text. No raster text substitution. */
 export const renderDirectional: LayoutReconstructor = async ({pages,assets,artwork}) => {
@@ -16,7 +17,8 @@ export const renderDirectional: LayoutReconstructor = async ({pages,assets,artwo
     const width=Math.max(20,Math.ceil((angle===90||angle===270?transverse:item.width)*20)+8);
     const height=Math.max(20,Math.ceil(item.height*20)+8);
     const text=item.segments.map(segment=>segment.text).join("");
-    const paragraph=new Paragraph({spacing:{before:0,after:0,line:Math.max(20,Math.round(item.font.size*20)),lineRule:LineRuleType.EXACT},children:[new TextRun({text,font:item.font.family,size:Math.max(2,Math.round(item.font.size*2)),bold:item.font.bold,italics:item.font.italic,color:item.font.color.replace("#","")})]});
+    const scale=await fitNativeRun(text,item.font.family,item.font.size,item.font.bold,item.font.italic,angle===90||angle===270?item.height:item.width);
+    const paragraph=new Paragraph({spacing:{before:0,after:0,line:Math.max(20,Math.round(item.font.size*20)),lineRule:LineRuleType.EXACT},children:[new TextRun({text,font:item.font.family,scale,size:Math.max(2,Math.round(item.font.size*2)),bold:item.font.bold,italics:item.font.italic,color:item.font.color.replace("#","")})]});
     const table=new Table({layout:TableLayoutType.FIXED,width:{size:width,type:WidthType.DXA},columnWidths:[width],
       float:{horizontalAnchor:TableAnchorType.PAGE,verticalAnchor:TableAnchorType.PAGE,absoluteHorizontalPosition:Math.round((item.x+(angle===270?Math.max(0,item.width-transverse)*.9:0))*20),absoluteVerticalPosition:Math.round(item.y*20)},
       borders:{top:none,bottom:none,left:none,right:none,insideHorizontal:none,insideVertical:none},
