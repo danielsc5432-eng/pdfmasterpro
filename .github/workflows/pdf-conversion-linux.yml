@@ -27,10 +27,13 @@ jobs:
         run: |
           pnpm test
           pnpm typecheck
+          pnpm build
           /opt/pdf2docx/bin/python scripts/test-native-layout.py
           /opt/pdf2docx/bin/python scripts/test-pdf-fidelity.py
       - name: Verify both quarter turns
         run: pnpm test:conversion --case=rotated-page --strict --keep-candidates
+      - name: Measure the complete public and synthetic corpus
+        run: pnpm test:conversion --public --keep-candidates
       - name: Render synthetic diagnostic candidates
         if: always()
         run: |

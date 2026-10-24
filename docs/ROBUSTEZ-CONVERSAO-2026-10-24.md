@@ -112,3 +112,11 @@ Foram adicionados casos sintéticos de 270° e digitalização inclinada com bai
 Validação de código: 98 testes TypeScript e 13 testes Python (10 de fidelidade e 3 de geometria/pré-processamento) aprovados. Build e verificação TypeScript aprovados. A comparação visual usa LibreOffice; não comprova renderização idêntica em todas as versões do Microsoft Word.
 
 Fontes técnicas consultadas: [PyMuPDF TextPage](https://pymupdf.readthedocs.io/en/latest/textpage.html), [direções no docx](https://docx.js.org/api/variables/index.TextDirection.html), [qualidade no Tesseract](https://tesseract-ocr.github.io/tessdoc/ImproveQuality.html) e [Noto CJK](https://github.com/notofonts/noto-cjk). Nenhuma API paga ou modelo comercial foi adicionado.
+
+### Compatibilidade Linux
+
+O teste remoto revelou uma diferença importante em relação ao Windows: LibreOffice 7.4, fornecido pelo Debian bookworm, deixou em branco a tabela com texto vertical. O DOCX continha o texto, mas sua renderização antiga não o mostrava. A conferência bloqueou a entrega; o teste automatizado em Debian reproduziu a falha.
+
+Foi criada uma bateria GitHub Actions com documentos sintéticos/públicos, sem credenciais nem PDFs particulares. O teste isolado com `node:22-trixie-slim` e LibreOffice 25 passou nas duas rotações, mantendo o mesmo código e os mesmos critérios. O Docker passa a usar essa base nas três etapas. Referências: [pacote oficial Debian](https://packages.debian.org/trixie/libreoffice-writer) e [imagem oficial Node](https://github.com/nodejs/docker-node/blob/main/22/trixie-slim/Dockerfile).
+
+O workflow também mede o corpus completo, mantém aprovação estrita nos casos de rotação e conserva artefatos sintéticos por sete dias para diagnosticar diferenças futuras. Relatórios de revisão continuam sendo revisões, mesmo que o comando exploratório termine com exit code zero.
