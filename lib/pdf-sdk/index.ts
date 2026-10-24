@@ -50,7 +50,8 @@ export function createPdfMasterSdk(options: Options = {}) {
         }
       }
       if (!best) throw new Error("Os motores não conseguiram reconstruir este PDF.");
-      if (best.report && unsafeFidelity(best.report)) throw new Error("A reconstrução perdeu conteúdo ou alterou páginas e foi bloqueada pela conferência.");
+      if (!best.report) throw new Error("A conferência de qualidade não pôde ser concluída; a entrega foi bloqueada.");
+      if (best.report && unsafeFidelity(best.report)) throw new Error("A reconstrução apresentou diferenças de conteúdo, páginas ou layout e foi bloqueada pela conferência.");
       return {...best,status:fidelityStatus(best.report),audit};
     },
   };

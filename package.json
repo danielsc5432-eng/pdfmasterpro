@@ -16,6 +16,7 @@
     "test:routes": "node scripts/smoke-routes.mjs",
     "test:ui": "node scripts/smoke-ui.mjs",
     "convert:sdk": "tsx scripts/convert-sdk.ts",
+    "test:conversion": "tsx scripts/regression-pdf-to-word.ts",
     "test:billing": "tsx --test tests/integration/billing.test.ts",
     "billing:sandbox": "tsx scripts/billing-sandbox.ts",
     "db:migrate": "tsx scripts/migrate.ts",

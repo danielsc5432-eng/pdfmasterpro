@@ -40,7 +40,8 @@ export async function checkedPdfToDocx(input: Uint8Array, name: string) {
       if (measured && betterFidelity(measured,report)) { output=alternate; report=measured; }
     } catch { /* Keep the candidate whose fidelity was actually measured. */ }
   }
-  if (report && unsafeFidelity(report)) throw new Error("A conferência detectou diferenças nas páginas, textos ou números. Não foi possível gerar um Word confiável para este PDF.");
+  if (!report) throw new Error("A conferência de qualidade não pôde ser concluída. Tente novamente para gerar um Word verificado.");
+  if (unsafeFidelity(report)) throw new Error("A conferência detectou diferenças nas páginas, textos, números ou layout. Não foi possível gerar um Word confiável para este PDF.");
   return { output, report, status: fidelityStatus(report) };
 }
 

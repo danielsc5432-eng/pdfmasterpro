@@ -2,6 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { joinLayoutPages, mapFontFamily, parseBboxLayout, parseLayout, parsePdfToHtml, parseSegments } from "../../lib/processing/layout";
 
+test("rotated Poppler coordinates use displayed dimensions without rounding normal pages",()=>{
+  const bbox='<doc><page width="400" height="600"><line xMin="520" yMin="40" xMax="532" yMax="80"><word xMin="520" yMin="40" xMax="532" yMax="80">Rotated</word></line></page></doc>';
+  const html='<pdf2xml><page width="600" height="400"></page></pdf2xml>';
+  assert.equal(parseLayout(bbox,html)[0].width,600);
+  assert.equal(parseLayout(bbox,html)[0].height,400);
+  const normal=parseLayout('<doc><page width="595.5" height="842.25"></page></doc>','<pdf2xml><page width="596" height="842"></page></pdf2xml>')[0];
+  assert.equal(normal.width,595.5);assert.equal(normal.height,842.25);
+});
+
 test("adjacent form fields keep their own font size and emphasis when bbox joins the row", () => {
   const bbox = `<doc><page width="595" height="842"><line xMin="30" yMin="100" xMax="300" yMax="111"><word xMin="30" yMin="100" xMax="80" yMax="111">DOCUMENTO</word><word xMin="90" yMin="100" xMax="115" yMax="111">Valor</word><word xMin="280" yMin="100" xMax="300" yMax="111">CPF:</word></line></page></doc>`;
   const html = `<pdf2xml><page><fontspec id="0" size="9" family="Arial" color="#000000"/><fontspec id="1" size="8" family="Arial,Bold" color="#000000"/><text top="101" left="30" width="90" font="0"><b>DOCUMENTO</b> Valor</text><text top="101" left="280" width="25" font="1"><b>CPF:</b></text></page></pdf2xml>`;

@@ -189,7 +189,8 @@ export function layoutSections(pages: LayoutPage[], assets: Map<string, Uint8Arr
     properties: {
       type: SectionType.NEXT_PAGE,
       page: {
-        size: { width: twips(page.width), height: twips(page.height), orientation: page.width > page.height ? PageOrientation.LANDSCAPE : PageOrientation.PORTRAIT },
+        // docx swaps the supplied dimensions for LANDSCAPE: provide portrait order.
+        size: { width: twips(Math.min(page.width,page.height)), height: twips(Math.max(page.width,page.height)), orientation: page.width > page.height ? PageOrientation.LANDSCAPE : PageOrientation.PORTRAIT },
         margin: { top: 0, right: 0, bottom: 0, left: 0, header: 0, footer: 0 },
       },
     },

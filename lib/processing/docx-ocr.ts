@@ -59,7 +59,18 @@ export function eraseRecognizedInk(png: PNG, words: OcrWord[]) {
 
 export async function recognizeScannedPages(pages: LayoutPage[], inputPath: string, directory: string, language = "por+eng") {
   const artwork=new Map<number,Uint8Array>();
-  const selected=pages.map((page,index)=>({page,index})).filter(({page})=>needsPageOcr(page));
+  const searchableScans=new Set<number>();
+  // A full-page scan can already have invisible OCR words. Treating those as
+  // native text leaves the original bitmap text underneath the editable text.
+  if(pages.some(page=>!needsPageOcr(page)&&page.images.some(image=>image.width*image.height>page.width*page.height*.5))){
+    const python=process.env.PDF_TO_WORD_PYTHON||(process.platform==="win32"?"python":"python3");
+    try{
+      const {stdout}=await execFile(python,[path.join(process.cwd(),"scripts","pdf_page_analysis.py"),inputPath],{timeout:20000,windowsHide:true,maxBuffer:1024*1024});
+      const result=JSON.parse(stdout) as {searchableScans?:unknown};
+      if(Array.isArray(result.searchableScans))for(const value of result.searchableScans)if(Number.isInteger(value)&&value>=0&&value<pages.length)searchableScans.add(value);
+    }catch{/* Fidelity verification still marks such sources for manual OCR review. */}
+  }
+  const selected=pages.map((page,index)=>({page,index})).filter(({page,index})=>needsPageOcr(page)||searchableScans.has(index));
   if(!selected.length)return artwork;
   if(!["por","eng","por+eng"].includes(language))throw new Error("O idioma do OCR deve ser português, inglês ou ambos.");
   const engine=process.env.OCR_ENGINE||"tesseract",renderer=process.env.PDF_RENDERER||"pdftoppm";

@@ -10,7 +10,7 @@ import { renderPageGrid } from "../../lib/pdf-sdk/page-grid";
 
 const page=():LayoutPage=>({width:400,height:600,images:[],texts:[["Descrição",20,20],["Valor",200,20],["Total",20,60],["1.234,56",200,60]].map(([text,x,y])=>({x:Number(x),y:Number(y),width:80,height:12,words:[{text:String(text),x:Number(x),width:80,bold:false,italic:false}],segments:[{text:String(text),bold:false,italic:false}],font:{family:"Arial",size:10,color:"#000000",bold:false,italic:false}}))});
 const proposal=()=>({version:1,tables:[{page:0,rows:[[["p0:l0:w0"],["p0:l1:w0"]],[["p0:l2:w0"],["p0:l3:w0"]]]}]});
-const good=():FidelityReport=>({sourcePages:1,outputPages:1,sameDimensions:true,textCoverage:1,numberCoverage:1,renderedTextCoverage:1,numberPositionCoverage:1,visualSimilarity:.7,worstPageSimilarity:.6,ocrReview:false});
+const good=():FidelityReport=>({sourcePages:1,outputPages:1,sameDimensions:true,textCoverage:1,numberCoverage:1,numberPrecision:1,renderedNumberCoverage:1,renderedNumberPrecision:1,renderedTextCoverage:1,numberPositionCoverage:1,visualSimilarity:.7,worstPageSimilarity:.6,ocrReview:false});
 test("AI plans cannot invent source IDs, duplicate amounts or reverse rows",()=>{
   const source=sourceDocument([page()]);
   const malicious=proposal();malicious.tables[0].rows[1][1]=["made-up-value"];
@@ -51,6 +51,12 @@ test("mixed font tops on the same baseline do not create clipping rows",async()=
   assert.equal(xml.match(/Valor/g)?.length,1);
   assert.equal(xml.match(/1\.234,56/g)?.length,1);
 });
+test("landscape dimensions are not swapped a second time by the DOCX library",async()=>{
+  const landscape={...page(),width:842,height:595};
+  const zip=await JSZip.loadAsync(await renderPageGrid({pages:[landscape],assets:new Map(),artwork:new Map()}));
+  const xml=await zip.file("word/document.xml")!.async("string");
+  assert.match(xml,/<w:pgSz[^>]*w:w="16840"[^>]*w:h="11900"[^>]*w:orient="landscape"/);
+});
 test("Docling geometry references existing source amounts rather than generating replacements",async()=>{
   const cells=[{l:10,t:10,r:150,b:40},{l:180,t:10,r:300,b:40},{l:10,t:50,r:150,b:80},{l:180,t:50,r:300,b:80}].map((bbox,i)=>({bbox:{...bbox,coord_origin:"TOPLEFT"},start_row_offset_idx:Math.floor(i/2),end_row_offset_idx:Math.floor(i/2)+1,start_col_offset_idx:i%2,end_col_offset_idx:i%2+1}));
   const planner=doclingTablePlanner({tables:[{prov:[{page_no:1}],data:{num_rows:2,num_cols:2,table_cells:cells}}]});
@@ -64,6 +70,7 @@ test("SDK prefers complete content over visually attractive result with missing 
 test("SDK blocks measured lost content, continues after engine failure and honours cancellation",async()=>{
   const engines=[{name:"failed",async convert():Promise<Uint8Array>{throw Error("secret internal detail");}},{name:"candidate",async convert(){return new Uint8Array([1]);}}];
   await assert.rejects(createPdfMasterSdk({engines,verify:async()=>({...good(),numberCoverage:.5})}).convert(new TextEncoder().encode("%PDF-1.7")),/bloqueada/);
+  await assert.rejects(createPdfMasterSdk({engines,verify:async()=>null}).convert(new TextEncoder().encode("%PDF-1.7")),/bloqueada/);
   const sdk=createPdfMasterSdk({engines,verify:async()=>good()});
   assert.equal((await sdk.convert(new TextEncoder().encode("%PDF-1.7"))).audit[0].outcome,"failed");
   const abort=new AbortController();abort.abort();

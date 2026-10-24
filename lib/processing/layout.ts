@@ -26,7 +26,7 @@ type BboxPage = { width: number; height: number; lines: BboxLine[] };
 
 type HtmlRun = { fontId: string; left: number; top: number; width?: number; segments: LayoutSegment[]; plain: string };
 
-type HtmlPage = { fonts: Record<string, LayoutFont>; texts: HtmlRun[]; images: LayoutImageItem[] };
+type HtmlPage = { width?: number; height?: number; fonts: Record<string, LayoutFont>; texts: HtmlRun[]; images: LayoutImageItem[] };
 
 const XML_ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
 
@@ -139,6 +139,7 @@ export function parsePdfToHtml(xml: string): HtmlPage[] {
   const pages: HtmlPage[] = [];
   const sharedFonts: Record<string, LayoutFont> = {};
   for (const page of xml.matchAll(/<page\b([^>]*)>([\s\S]*?)<\/page>/g)) {
+    const pageAttributes = parseAttributes(page[1]);
     for (const spec of page[2].matchAll(/<fontspec\b([^>]*?)\/?>/g)) {
       const attributes = parseAttributes(spec[1]);
       if (!attributes.id) continue;
@@ -158,7 +159,7 @@ export function parsePdfToHtml(xml: string): HtmlPage[] {
       if (!attributes.src) continue;
       images.push({ x: toNumber(attributes.left), y: toNumber(attributes.top), width: toNumber(attributes.width), height: toNumber(attributes.height), source: attributes.src });
     }
-    pages.push({ fonts, texts, images });
+    pages.push({ width: toNumber(pageAttributes.width), height: toNumber(pageAttributes.height), fonts, texts, images });
   }
   return pages;
 }
@@ -352,7 +353,10 @@ export function joinLayoutPages(bboxPages: BboxPage[], htmlPages: HtmlPage[]): L
     
     // Sort by reading order
     merged.sort((a, b) => a.y - b.y || a.x - b.x); // bbox coordinates start at the top
-    return { width: page.width, height: page.height, texts: merged, images: html?.images ?? [] };
+    // pdftotext reports unrotated dimensions but already rotates word coordinates.
+    // pdftohtml reports displayed dimensions. Only swap when both axes agree.
+    const swapped = html?.width && html.height && Math.abs(html.width-page.height)<2 && Math.abs(html.height-page.width)<2 && Math.abs(page.width-page.height)>2;
+    return { width: swapped ? page.height : page.width, height: swapped ? page.width : page.height, texts: merged, images: html?.images ?? [] };
   });
 }
 

@@ -19,7 +19,7 @@ Agora: fluxo nativo por página, com uma tabela de organização de uma coluna, 
 
 Fontes diferentes na mesma linha são agrupadas pela linha de base, não pelo topo. A primeira tentativa usava o topo e cortava rótulos; a inspeção visual encontrou isso, o algoritmo foi corrigido e foi adicionado teste de regressão. Espaçamento do texto e altura de faixa são tratados separadamente.
 
-O candidato foi incluído tanto no SDK quanto no fluxo automático local. Só substitui o resultado anterior quando a avaliação de fidelidade o considera melhor. Falhas retornam ao candidato previamente medido. O processamento no servidor em produção ainda precisa receber e validar a publicação desta alteração.
+O candidato foi incluído tanto no SDK quanto no fluxo automático. Só substitui o resultado anterior quando a avaliação de fidelidade o considera melhor. Falhas retornam ao candidato previamente medido.
 
 ## Comparação real
 
@@ -40,3 +40,13 @@ A comparação com o motor posicional anterior também mostra aumento visual: DT
 Esses percentuais são métricas do projeto, com tolerância de rasterização, não uma porcentagem universal de identidade. Não comprovam equivalência ao Apryse nem garantem qualquer PDF. Há diferenças residuais e a validação no Microsoft Word ainda precisa ser concluída. A inspeção visual local da primeira página dos dois documentos confirmou campos, rótulos e valores legíveis após a correção.
 
 Artefatos privados ignorados: `.vercel/review/SDK-grid-DTC.docx`, `SDK-grid-INSS.docx`, `sdk-grid-benchmark.json`, `grid-proof/`. Não publicar documentos pessoais no GitHub.
+
+## Publicação
+
+- Commit publicado: `6b38584`.
+- 93 testes aprovados, TypeScript e builds local, Vercel e Render aprovados.
+- Vercel: `dpl_44ntTRFSUNhZkVau6bA6gstgVJhq`, Ready e domínio www.pdfmasterpro.com.br atualizado.
+- Render: `dep-dbefn5tg1s2s739cail0`, Live, serviço existente `srv-dbakp36q1p3s73c2er70`.
+- Conversão real pelo domínio público: DTC HTTP 200, fidelity checked, 3 → 3 páginas, DOCX usando o novo fluxo nativo.
+- Conversão real pelo domínio público: INSS HTTP 200, fidelity checked, 2 → 2 páginas, DOCX usando o novo fluxo nativo.
+- A publicação não ativou serviços externos Docling/Stirling, não contratou plano pago e não enviou documentos pessoais ao repositório.
