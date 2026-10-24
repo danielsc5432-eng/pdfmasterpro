@@ -277,7 +277,9 @@ export async function mergeDocxBodies(chunks: Uint8Array[]): Promise<Uint8Array<
   return new Uint8Array(out);
 }
 
-export async function pdfToDocx(input: Uint8Array, originalName = "documento", ocrLanguage = "por+eng") {
+export type LayoutReconstructor = (context: { pages: LayoutPage[]; assets: Map<string, Uint8Array>; artwork: Map<number, Uint8Array> }) => Promise<Uint8Array>;
+
+export async function pdfToDocx(input: Uint8Array, originalName = "documento", ocrLanguage = "por+eng", reconstruct?: LayoutReconstructor) {
   // Layout reconstruction is deterministic across Windows and Linux. Native Word
   // reflow is an explicit opt-in, since it moves table/form content unpredictably.
   if (process.env.PDF_TO_WORD_NATIVE_REFLOW === "1") {
@@ -363,6 +365,7 @@ export async function pdfToDocx(input: Uint8Array, originalName = "documento", o
       for (const [index, image] of scannedArtwork) artwork.set(index, image);
       // Original artwork already includes the logos, at the PDF's exact coordinates.
       const documentPages = originalArtwork ? pages.map(page => ({ ...page, images: [] })) : pages;
+      if (reconstruct) return await reconstruct({ pages: documentPages, assets, artwork });
       const documentOptions = {
         creator: "PDF Master Pro",
         title: originalName,
