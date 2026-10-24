@@ -15,10 +15,12 @@ export async function checkedPdfToDocx(input: Uint8Array, name: string) {
     catch { mode = "layout"; output = await pdfToDocx(input,name,"por+eng"); }
   } else output = await pdfToDocx(input,name,"por+eng");
   let report = await checkDocxFidelity(input,output,Math.min(90000,deadline-Date.now()));
+  console.info("[pdfmaster] Word fidelity",JSON.stringify({engine:mode,report}));
   if (report && fidelityStatus(report) === "review" && deadline-Date.now()>60000) {
     try {
       const grid = await pdfToDocx(input,name,"por+eng",renderPageGrid);
       const measured = await checkDocxFidelity(input,grid,Math.min(60000,deadline-Date.now()));
+      console.info("[pdfmaster] Word fidelity",JSON.stringify({engine:"page-grid",report:measured}));
       if (measured && betterFidelity(measured,report)) { output=grid; report=measured; }
     } catch { /* Retain the measured baseline if flow reconstruction cannot preserve geometry. */ }
   }
@@ -26,6 +28,7 @@ export async function checkedPdfToDocx(input: Uint8Array, name: string) {
     try{
       const candidate=await nativePdfToDocx(input,name);
       const measured=await checkDocxFidelity(input,candidate,Math.min(60000,deadline-Date.now()));
+      console.info("[pdfmaster] Word fidelity",JSON.stringify({engine:"native-unicode-layout",report:measured}));
       if(measured&&(!report||betterFidelity(measured,report))){output=candidate;report=measured;}
     }catch{/* Preserve the measured baseline when Unicode reconstruction is incompatible. */}
   }
