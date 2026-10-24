@@ -20,5 +20,21 @@ async function main(){
   finally{if(old===undefined)delete process.env.PDF_TO_WORD_PYTHON;else process.env.PDF_TO_WORD_PYTHON=old;}
   const report={sourceBytes:input.length,outputBytes:result.length,reduction:1-result.length/input.length,preserved:true};
   await writeFile(path.join(directory,"report.json"),JSON.stringify(report,null,2));console.log(JSON.stringify(report));
+  const cases=["signed-values","staggered-columns","mixed-sizes-blank","mixed-renderers","rotated-page","rotated-page-270","scanned-statement","searchable-scan","transparent-searchable-scan","skewed-low-contrast"];
+  const corpus=[];
+  for(const name of cases){
+    const sourceFile=path.join(directory,name+".pdf"),target=path.join(directory,name+"-optimized.pdf");
+    const original=new Uint8Array(await readFile(sourceFile)),optimized=await optimizePdf(original);
+    assert.ok(optimized.length<=original.length,"Optimizer must not increase file size");
+    const unchanged=Buffer.from(original).equals(Buffer.from(optimized));
+    await writeFile(target,optimized);
+    if(!unchanged){
+      const {stdout:comparison}=await execFile(python,["scripts/pdf-preservation.py",sourceFile,target],{timeout:60000,windowsHide:true});
+      assert.equal(JSON.parse(comparison).preserved,true,`Preservation failed: ${name}`);
+    }
+    corpus.push({name,sourceBytes:original.length,outputBytes:optimized.length,unchanged,preserved:true});
+  }
+  await writeFile(path.join(directory,"corpus.json"),JSON.stringify(corpus,null,2));
+  console.log(JSON.stringify({optimizerCases:corpus.length,reduced:corpus.filter(row=>!row.unchanged).length,allPreserved:true}));
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

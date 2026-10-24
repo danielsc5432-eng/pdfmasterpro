@@ -127,6 +127,25 @@ class OptimizerTest(unittest.TestCase):
             a=fitz.Pixmap(original,original[0].get_images()[0][0])
             b=fitz.Pixmap(optimized,optimized[0].get_images()[0][0])
             self.assertEqual((a.width,a.height,a.samples),(b.width,b.height,b.samples))
+    def test_custom_xmp_metadata_cannot_disappear(self):
+        source=self.source()
+        with fitz.open(source) as doc:
+            doc.set_xml_metadata('<metadata><record>Keep this record</record></metadata>')
+            metadata=str(self.root/"custom-metadata.pdf");doc.save(metadata)
+        with fitz.open(metadata) as doc:
+            doc.del_xml_metadata()
+            removed=str(self.root/"removed-metadata.pdf");doc.save(removed)
+        self.assertFalse(load("pdf-preservation").preserved(metadata,removed))
+    def test_attachment_descriptions_and_filenames_are_preserved(self):
+        source=self.source()
+        with fitz.open(source) as doc:
+            doc.embfile_add("record",b"Same bytes",filename="original.txt",desc="Original description")
+            attached=str(self.root/"described.pdf");doc.save(attached)
+        with fitz.open(attached) as doc:
+            doc.embfile_del("record")
+            doc.embfile_add("record",b"Same bytes",filename="changed.txt",desc="Changed description")
+            changed=str(self.root/"changed-description.pdf");doc.save(changed)
+        self.assertFalse(load("pdf-preservation").preserved(attached,changed))
 
 if __name__=="__main__":
     unittest.main()

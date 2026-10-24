@@ -23,11 +23,20 @@ def preserved(source,candidate):
         keys=["title","author","subject","keywords","creator","producer","creationDate","modDate"]
         if any(original.metadata.get(key)!=result.metadata.get(key) for key in keys) or original.get_toc()!=result.get_toc():
             return False
+        if original.get_xml_metadata()!=result.get_xml_metadata():
+            return False
         names=original.embfile_names()
         if names!=result.embfile_names():
             return False
         for name in names:
-            if original.embfile_info(name)["size"]>16*1024*1024:
+            source_info=original.embfile_info(name)
+            candidate_info=result.embfile_info(name)
+            # Compressed length can change; names, descriptions, dates and
+            # decoded size belong to the attachment and must remain intact.
+            metadata=lambda info:{key:value for key,value in info.items() if key!="length"}
+            if metadata(source_info)!=metadata(candidate_info):
+                return False
+            if source_info["size"]>16*1024*1024:
                 return False
             if hashlib.sha256(original.embfile_get(name)).digest()!=hashlib.sha256(result.embfile_get(name)).digest():
                 return False
