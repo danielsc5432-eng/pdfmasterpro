@@ -54,3 +54,11 @@ As coberturas acima medem conteúdo do DOCX, não identidade visual universal. O
 Antes de ativar a reconstrução assistida, validar com o Microsoft Word, ampliar os casos de teste sem expor documentos pessoais, tratar células mescladas, ajustar geometria vertical e validar o mapeamento de coordenadas da versão específica do modelo. Qualquer modelo futuro deve fornecer propostas de estrutura, nunca substituir textos ou valores. Um modelo livre continua exigindo recursos de processamento; não implica hospedagem gratuita ilimitada.
 
 Componentes e licenças de dependências continuam aplicáveis, incluindo PyMuPDF. Clones AGPL de comparação permanecem ignorados. Não declarar todo o conjunto como código próprio ou como licença MIT sem verificar as licenças das dependências.
+
+## Atualização posterior: candidato Unicode e direcional
+
+O SDK e a seleção automática do site agora incluem `native-unicode-layout`: extração PyMuPDF com caracteres, baseline e direções; tabelas Word com direção nativa para 90°/270°; fallback posicionado em geometria incompatível. Os resultados continuam sendo medidos antes da seleção. Não há rasterização de páginas inteiras para simular texto editável.
+
+O OCR possui pré-processamento limitado de contraste, binarização e deskew com transformação inversa de coordenadas. A substituição de uma tentativa de OCR não pode alterar silenciosamente os termos numéricos da tentativa original. OCR continua exigindo revisão.
+
+O histórico de validação acima descreve versões anteriores. Os resultados mais recentes e as limitações estão em [ROBUSTEZ-CONVERSAO-2026-10-24.md](./ROBUSTEZ-CONVERSAO-2026-10-24.md). O adaptador de Docling continua opcional; esta atualização não representa treinamento de um modelo de IA nem ativação de um serviço externo.

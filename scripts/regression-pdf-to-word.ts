@@ -18,7 +18,7 @@ async function main() {
   await mkdir(directory,{recursive:true});
   const python=process.env.PDF_TO_WORD_PYTHON || (process.platform==="win32"?"python":"python3");
   await execFile(python,["scripts/generate-pdf-regression.py",directory],{timeout:30000,windowsHide:true});
-  const names=["signed-values.pdf","staggered-columns.pdf","mixed-sizes-blank.pdf","rotated-page.pdf","scanned-statement.pdf","searchable-scan.pdf","transparent-searchable-scan.pdf"];
+  const names=["signed-values.pdf","staggered-columns.pdf","mixed-sizes-blank.pdf","rotated-page.pdf","rotated-page-270.pdf","scanned-statement.pdf","searchable-scan.pdf","transparent-searchable-scan.pdf","skewed-low-contrast.pdf"];
   const manifest:{name:string;sha256:string;url?:string}[]=[];
   if(process.argv.includes("--public"))for(const fixture of upstream){
     const response=await fetch(fixture.url,{signal:AbortSignal.timeout(30000),redirect:"error"});

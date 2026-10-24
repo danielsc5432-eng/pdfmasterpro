@@ -3,6 +3,7 @@ import { inspectConversionMode, structuralPdfToDocx } from "./pdf2docx";
 import { betterFidelity, checkDocxFidelity, fidelityStatus, unsafeFidelity } from "./docx-fidelity";
 import { configuredExtraEngines, extraEngineToWord } from "./extra-engines";
 import { renderPageGrid } from "../pdf-sdk/page-grid";
+import { nativePdfToDocx } from "../pdf-sdk/native";
 
 /** Preserve form geometry; OCR scanned pages; rebuild native flow when appropriate. */
 export async function checkedPdfToDocx(input: Uint8Array, name: string) {
@@ -20,6 +21,13 @@ export async function checkedPdfToDocx(input: Uint8Array, name: string) {
       const measured = await checkDocxFidelity(input,grid,Math.min(60000,deadline-Date.now()));
       if (measured && betterFidelity(measured,report)) { output=grid; report=measured; }
     } catch { /* Retain the measured baseline if flow reconstruction cannot preserve geometry. */ }
+  }
+  if(fidelityStatus(report)!=="checked"&&deadline-Date.now()>60000){
+    try{
+      const candidate=await nativePdfToDocx(input,name);
+      const measured=await checkDocxFidelity(input,candidate,Math.min(60000,deadline-Date.now()));
+      if(measured&&(!report||betterFidelity(measured,report))){output=candidate;report=measured;}
+    }catch{/* Preserve the measured baseline when Unicode reconstruction is incompatible. */}
   }
   const extras = configuredExtraEngines();
   for (let index = 0; index < extras.length; index++) {

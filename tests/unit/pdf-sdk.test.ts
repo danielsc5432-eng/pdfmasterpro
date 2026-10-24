@@ -1,4 +1,5 @@
 import test from "node:test";
+import { renderDirectional } from "../../lib/pdf-sdk/directional";
 import assert from "node:assert/strict";
 import JSZip from "jszip";
 import type { LayoutPage } from "../../lib/processing/layout";
@@ -56,6 +57,15 @@ test("landscape dimensions are not swapped a second time by the DOCX library",as
   const zip=await JSZip.loadAsync(await renderPageGrid({pages:[landscape],assets:new Map(),artwork:new Map()}));
   const xml=await zip.file("word/document.xml")!.async("string");
   assert.match(xml,/<w:pgSz[^>]*w:w="16840"[^>]*w:h="11900"[^>]*w:orient="landscape"/);
+});
+
+test("quarter-turn text remains editable with native Word text direction",async()=>{
+  const rotated=page();rotated.texts=rotated.texts.slice(0,1).map(item=>({...item,rotation:90}));
+  const zip=await JSZip.loadAsync(await renderDirectional({pages:[rotated],assets:new Map(),artwork:new Map()}));
+  const xml=await zip.file("word/document.xml")!.async("string");
+  assert.match(xml,/<w:textDirection w:val="tbRl"/);
+  assert.equal(xml.match(/Descri/g)?.length,1);
+  assert.match(xml,/w:tblpX="400"/);
 });
 test("Docling geometry references existing source amounts rather than generating replacements",async()=>{
   const cells=[{l:10,t:10,r:150,b:40},{l:180,t:10,r:300,b:40},{l:10,t:50,r:150,b:80},{l:180,t:50,r:300,b:80}].map((bbox,i)=>({bbox:{...bbox,coord_origin:"TOPLEFT"},start_row_offset_idx:Math.floor(i/2),end_row_offset_idx:Math.floor(i/2)+1,start_col_offset_idx:i%2,end_col_offset_idx:i%2+1}));

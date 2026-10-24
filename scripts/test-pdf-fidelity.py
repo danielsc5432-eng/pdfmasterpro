@@ -14,6 +14,13 @@ spec.loader.exec_module(fidelity)
 
 
 class FidelityRegression(unittest.TestCase):
+    def test_cjk_spacing_does_not_mask_missing_characters(self):
+        source,_=fidelity.text_content("合同金额 123.45")
+        split,_=fidelity.text_content("合 同 金 额 123.45")
+        missing,_=fidelity.text_content("合 同 金 123.45")
+        self.assertEqual(fidelity.coverage(source,split),1)
+        self.assertLess(fidelity.coverage(source,missing),1)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)

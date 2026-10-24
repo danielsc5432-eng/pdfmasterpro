@@ -1,6 +1,6 @@
-import type { LayoutPage } from "../processing/layout";
+import type { LayoutPage, LayoutWord } from "../processing/layout";
 
-export type SourceSpan = { id: string; page: number; text: string; x: number; y: number; width: number; height: number; font: string; size: number; bold: boolean; italic: boolean; color: string };
+export type SourceSpan = { id: string; page: number; text: string; x: number; y: number; width: number; height: number; baseline?:number; font: string; size: number; bold: boolean; italic: boolean; color: string };
 export type SourceDocument = { version: 1; pages: { width: number; height: number; spans: SourceSpan[] }[] };
 /** AI plans contain references only. They cannot supply replacement text or values. */
 export type TablePlan = { page: number; rows: string[][][] };
@@ -9,8 +9,8 @@ export interface LayoutPlanner { readonly name: string; propose(source: SourceDo
 
 export function sourceDocument(pages: LayoutPage[]): SourceDocument {
   return { version: 1, pages: pages.map((page, p) => ({ width: page.width, height: page.height, spans: page.texts.flatMap((line, l) => {
-    const words = line.words.length ? line.words : [{ text: line.segments.map(s => s.text).join(""), x: line.x, width: line.width, bold: line.font.bold, italic: line.font.italic }];
-    return words.filter(word => word.text.trim()).map((word, w) => ({ id: `p${p}:l${l}:w${w}`, page: p, text: word.text, x: word.x, y: line.y, width: word.width, height: line.height, font: line.font.family, size: line.font.size, bold: word.bold, italic: word.italic, color: line.font.color }));
+    const words: LayoutWord[] = line.words.length ? line.words : [{ text: line.segments.map(s => s.text).join(""), x: line.x, width: line.width, bold: line.font.bold, italic: line.font.italic }];
+    return words.filter(word => word.text.trim()).map((word, w) => ({ id: `p${p}:l${l}:w${w}`, page: p, text: word.text, x: word.x, y: word.y??line.y, width: word.width, height: word.height??line.height, baseline:line.baseline,font: line.font.family, size: line.font.size, bold: word.bold, italic: word.italic, color: line.font.color }));
   }) })) };
 }
 

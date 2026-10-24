@@ -4,18 +4,18 @@ import { sourceDocument, type SourceSpan } from "./model";
 
 /** Editable flow rows rather than floating frames. Source artwork remains behind text. */
 export const renderPageGrid: LayoutReconstructor = async ({pages,assets,artwork}) => {
-  const source = sourceDocument(pages);
-  const sections = layoutSections(pages.map(page=>({...page,texts:[]})),assets,artwork);
+  const source = sourceDocument(pages.map(page=>({...page,texts:page.texts.filter(item=>(item.rotation??0)===0)})));
+  const sections = layoutSections(pages.map(page=>({...page,texts:page.texts.filter(item=>(item.rotation??0)!==0)})),assets,artwork);
   const none={style:BorderStyle.NONE,size:0,color:"FFFFFF"};
   for (const [index,page] of source.pages.entries()) {
     const groups: {y:number;baseline:number;spans:SourceSpan[]}[]=[];
-    for (const span of [...page.spans].sort((a,b)=>(a.y+a.height)-(b.y+b.height)||a.x-b.x)) {
+    for (const span of [...page.spans].sort((a,b)=>(a.baseline??a.y+a.height)-(b.baseline??b.y+b.height)||a.x-b.x)) {
       if (![span.x,span.y,span.width,span.height,span.size].every(Number.isFinite) || span.x<0 || span.y<0 || span.x+span.width>page.width+2) throw new Error("Unsupported page geometry");
       const last=groups.at(-1);
       // Mixed font sizes on one physical line have different top coordinates.
       // Group by baseline so labels are not clipped into artificial tiny rows.
-      if(last&&Math.abs(last.baseline-(span.y+span.height))<2.5){last.spans.push(span);last.y=Math.min(last.y,span.y);}
-      else groups.push({y:span.y,baseline:span.y+span.height,spans:[span]});
+      if(last&&Math.abs(last.baseline-(span.baseline??span.y+span.height))<2.5){last.spans.push(span);last.y=Math.min(last.y,span.y);}
+      else groups.push({y:span.y,baseline:span.baseline??span.y+span.height,spans:[span]});
     }
     if (!groups.length) continue; // Keep genuine blank pages and their artwork.
     const rows:TableRow[]=[];

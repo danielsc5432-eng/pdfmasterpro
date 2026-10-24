@@ -70,3 +70,45 @@ Arquivos sintéticos são gerados sem identificadores aleatórios de PDF. Manife
 ## Limitações abertas
 
 Reconstrução de texto em ângulos arbitrários, tabelas/fontes asiáticas complexas, anotações, segmentação de palavras e validação específica no Microsoft Word ainda exigem trabalho. Nenhum critério foi reduzido para declarar 100%. A confiança do resultado deve continuar visível e candidatos com perdas medidas permanecem bloqueados.
+
+## Publicação e prova remota
+
+- Commit `4eebeee` publicado no repositório do projeto.
+- Vercel `dpl_AefqLurffufrAyjmhURoeBZ7P9jv`: Ready, domínio www.pdfmasterpro.com.br atualizado.
+- Render `dep-dbegc22jnfac73dqcqog`: Live, worker existente atualizado.
+- DTC real: HTTP 200, checked, 3 → 3 páginas, fluxo nativo confirmado no DOCX.
+- INSS real: HTTP 200, checked, 2 → 2 páginas, fluxo nativo confirmado no DOCX.
+- Caso sintético com texto girado e layout reprovado: HTTP 422 com mensagem da conferência; nenhum Word incorreto entregue como sucesso.
+- Nenhum recurso pago contratado. PDFs pessoais e corpus de teste permaneceram fora do repositório público.
+
+## Nova rodada: Unicode, direções, fontes e OCR
+
+Implementado um candidato adicional com extração Unicode e coordenadas de caracteres pelo PyMuPDF. A seleção automática continua comparando conteúdo editável, PDF renderizado, paginação, posição dos números e aparência. Um candidato novo não substitui um resultado melhor apenas por usar outro motor.
+
+- Texto de 90°/270° utiliza direção nativa de células Word, mantendo texto editável. Blocos independentes preservam a posição de colunas e anotações; ângulos oblíquos ainda usam o fallback conservador e precisam de revisão.
+- Geometria nativa inclui baseline, bloco de origem e posições verticais de palavras, além das coordenadas horizontais. Linhas incompatíveis usam o renderizador posicionado como alternativa.
+- O Docker instala fontes Noto gerais e CJK, com aliases abertos para famílias chinesas. Não são redistribuídas fontes proprietárias extraídas de PDFs. A fonte substituta pode mudar a aparência e continua sujeita à conferência.
+- OCR ganha um candidato de escala de cinza, binarização adaptativa, correção de inclinação com canvas expandido e segmentação alternativa. As quatro extremidades de cada palavra retornam ao espaço original pela transformação inversa. A escolha exige aumento de confiança e preservação dos termos numéricos já reconhecidos; confiança não comprova exatidão.
+- Comparação CJK verifica ideogramas individualmente: espaços inseridos por diferentes extratores não simulam perda. Um teste separado confirma que um caractere realmente ausente continua reduzindo a cobertura. Os critérios e limiares de aprovação não foram reduzidos.
+- OpenCV usa uma thread no pré-processamento e limita as dimensões das imagens. Falhas de preparação mantêm o OCR original. Digitalizações continuam marcadas para revisão.
+
+### Evidências desta rodada
+
+Os onze casos anteriores foram executados novamente. Após a correção final do fallback nativo, o caso de tabela asiática foi repetido separadamente:
+
+| Caso | Resultado final medido | Similaridade visual |
+|---|---|---|
+| Texto girado 90° | checked; antes bloqueado | 0,9965 |
+| Anotações giradas | checked; antes revisão | 0,9431 |
+| Colunas públicas | checked; antes revisão | 0,9802 |
+| Tabela asiática | review; antes bloqueada; texto e números completos | 0,8448 |
+| DTC fornecido pelo usuário | checked; 3 → 3 páginas | 0,9823 |
+| INSS fornecido pelo usuário | checked; 2 → 2 páginas | 0,9829 |
+
+A tabela asiática ainda tem posição numérica de 0,90: preservação de conteúdo não significa identidade de layout. As quatro digitalizações/imagens do corpus anterior permanecem em revisão. Nos onze casos originais, o resultado consolidado final é **6 checked, 5 review, 0 bloqueados**. O primeiro relatório integral ainda registra o fallback anterior para a tabela; `results-public-lattice.json` contém sua repetição final e deve ser considerado na consolidação.
+
+Foram adicionados casos sintéticos de 270° e digitalização inclinada com baixo contraste. O caso de 270° foi aprovado, com similaridade visual 1,00 nessa métrica. A digitalização inclinada exige revisão, com similaridade visual 0,7238; o processamento não garante que cada caractere reconhecido corresponda à imagem. Consolidando os onze casos anteriores, a repetição final CJK e os dois casos novos: **13 casos, 7 checked, 6 review, 0 bloqueados**. Esse resultado não é 100% de conversões perfeitas.
+
+Validação de código: 98 testes TypeScript e 13 testes Python (10 de fidelidade e 3 de geometria/pré-processamento) aprovados. Build e verificação TypeScript aprovados. A comparação visual usa LibreOffice; não comprova renderização idêntica em todas as versões do Microsoft Word.
+
+Fontes técnicas consultadas: [PyMuPDF TextPage](https://pymupdf.readthedocs.io/en/latest/textpage.html), [direções no docx](https://docx.js.org/api/variables/index.TextDirection.html), [qualidade no Tesseract](https://tesseract-ocr.github.io/tessdoc/ImproveQuality.html) e [Noto CJK](https://github.com/notofonts/noto-cjk). Nenhuma API paga ou modelo comercial foi adicionado.

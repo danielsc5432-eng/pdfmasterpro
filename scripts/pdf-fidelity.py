@@ -21,7 +21,11 @@ def text_content(text):
     text = normalize(text)
     text = re.sub(r"(?<=\d)\s+(?=[.,/\-])|(?<=[.,/\-])\s+(?=\d)", "", text)
     text = re.sub(r"([+\-])\s+(?=\d)", r"\1", text)
-    return Counter(re.findall(r"\w+", text)), Counter(re.findall(r"[+\-]?\d+(?:[.,/\-]\d+)*", text))
+    # Ideographs need no spaces. PDF engines disagree about CJK word segmentation;
+    # compare the same individual characters, while keeping Latin words intact.
+    cjk = r"\u3400-\u9fff\uf900-\ufaff\U00020000-\U0002fa1f"
+    tokens = re.findall("["+cjk+"]|[^\\W"+cjk+"]+", text)
+    return Counter(tokens), Counter(re.findall(r"[+\-]?\d+(?:[.,/\-]\d+)*", text))
 
 
 def numeric_words(page):

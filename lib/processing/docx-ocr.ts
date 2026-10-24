@@ -8,6 +8,23 @@ import { commandExists, execFile } from "./system";
 
 export type OcrWord = { text: string; x: number; y: number; width: number; height: number; confidence: number; line: string };
 
+/** Undo deskew for every corner, retaining the original page coordinate space. */
+export function restoreOcrCoordinates(words: OcrWord[], inverse: number[][]): OcrWord[] {
+  if(inverse.length!==2||inverse.some(row=>row.length!==3||!row.every(Number.isFinite)))throw new Error("Invalid OCR transform");
+  return words.map(word=>{
+    const points=[[word.x,word.y],[word.x+word.width,word.y],[word.x,word.y+word.height],[word.x+word.width,word.y+word.height]].map(([x,y])=>inverse.map(row=>row[0]*x+row[1]*y+row[2]));
+    const x=Math.min(...points.map(p=>p[0])),y=Math.min(...points.map(p=>p[1]));
+    return {...word,x:Math.max(0,x),y:Math.max(0,y),width:Math.max(...points.map(p=>p[0]))-Math.max(0,x),height:Math.max(...points.map(p=>p[1]))-Math.max(0,y)};
+  }).filter(word=>word.width>0&&word.height>0);
+}
+
+export function betterOcrCandidate(baseline: OcrWord[], candidate: OcrWord[]): boolean {
+  const numbers=(words:OcrWord[])=>words.map(word=>word.text).filter(text=>/\d/.test(text)).sort().join("\n");
+  const confidence=(words:OcrWord[])=>words.reduce((sum,w)=>sum+w.confidence*w.text.length,0)/Math.max(1,words.reduce((sum,w)=>sum+w.text.length,0));
+  // Confidence is not proof of correctness. Never silently replace numeric content.
+  return candidate.length>=baseline.length*.95&&numbers(candidate)===numbers(baseline)&&confidence(candidate)>confidence(baseline)+3;
+}
+
 export function parseOcrTsv(tsv: string): OcrWord[] {
   const words: OcrWord[] = [];
   for (const line of tsv.replace(/^\uFEFF/, "").split(/\r?\n/).slice(1)) {
@@ -88,7 +105,19 @@ export async function recognizeScannedPages(pages: LayoutPage[], inputPath: stri
     if(!name)throw new Error(`O renderizador não produziu a página ${index+1} para OCR.`);
     const image=path.join(directory,name),base=path.join(directory,`recognized-${index}`);
     await execFile(engine,[image,base,"-l",language,"--dpi",String(dpi),"--psm","3","-c","tessedit_create_tsv=1"],{timeout:180000,windowsHide:true,maxBuffer:4*1024*1024,env:{...process.env,OMP_THREAD_LIMIT:"1"}});
-    const words=parseOcrTsv(await readFile(`${base}.tsv`,"utf8"));
+    let words=parseOcrTsv(await readFile(`${base}.tsv`,"utf8"));
+    if(words.length===0||words.some(word=>word.confidence<70)){
+      const prepared=path.join(directory,`prepared-${index}.png`),alternative=path.join(directory,`alternative-${index}`);
+      try{
+        const python=process.env.PDF_TO_WORD_PYTHON||(process.platform==="win32"?"python":"python3");
+        const {stdout}=await execFile(python,[path.join(process.cwd(),"scripts/pdf-ocr-preprocess.py"),image,prepared],{timeout:30000,windowsHide:true,maxBuffer:1024*1024,env:{...process.env,OMP_NUM_THREADS:"1"}});
+        const geometry=JSON.parse(stdout) as {inverse:number[][]};
+        await execFile(engine,[prepared,alternative,"-l",language,"--dpi",String(dpi),"--psm","6","-c","tessedit_create_tsv=1"],{timeout:60000,windowsHide:true,maxBuffer:4*1024*1024,env:{...process.env,OMP_THREAD_LIMIT:"1"}});
+        const candidate=restoreOcrCoordinates(parseOcrTsv(await readFile(`${alternative}.tsv`,"utf8")),geometry.inverse);
+        if(betterOcrCandidate(words,candidate))words=candidate;
+      }catch{/* The original OCR stays available when preprocessing cannot improve it safely. */}
+      finally{await rm(prepared,{force:true});}
+    }
     if(!words.length)throw new Error(`O OCR não encontrou texto legível na página ${index+1}.`);
     const png=PNG.sync.read(await readFile(image));
     page.texts=ocrPageLayout(words,page.width,page.height,png.width,png.height,text=>metrics.widthOfTextAtSize(text,1));

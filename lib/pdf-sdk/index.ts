@@ -4,6 +4,7 @@ import { checkDocxFidelity, betterFidelity, fidelityStatus, unsafeFidelity, type
 import { sourceDocument, validatePlan, type LayoutPlanner } from "./model";
 import { renderReconstruction } from "./render";
 import { renderPageGrid } from "./page-grid";
+import { nativePdfToDocx } from "./native";
 export { sourceDocument, validatePlan } from "./model";
 export type { LayoutPlanner, SourceDocument, ReconstructionPlan, TablePlan } from "./model";
 
@@ -16,6 +17,7 @@ export function createPdfMasterSdk(options: Options = {}) {
   const engines = options.engines ?? [
     {name:"positioned-ocr", convert:(input:Uint8Array,ctx:{name:string})=>pdfToDocx(input,ctx.name,"por+eng")},
     {name:"page-grid", convert:(input:Uint8Array,ctx:{name:string})=>pdfToDocx(input,ctx.name,"por+eng",renderPageGrid)},
+    {name:"native-unicode-layout", convert:(input:Uint8Array,ctx:{name:string})=>nativePdfToDocx(input,ctx.name)},
     {name:"pdf2docx", convert:(input:Uint8Array)=>structuralPdfToDocx(input,120000)},
   ];
   const candidates = [...engines];

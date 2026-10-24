@@ -2,9 +2,12 @@ export type LayoutSegment = { text: string; bold: boolean; italic: boolean };
 
 export type LayoutFont = { family: string; size: number; color: string; bold: boolean; italic: boolean };
 
-export type LayoutWord = { text: string; x: number; width: number; bold: boolean; italic: boolean };
+export type LayoutWord = { text: string; x: number; y?: number; width: number; height?: number; bold: boolean; italic: boolean };
 
 export type LayoutTextItem = {
+  rotation?: number;
+  baseline?: number;
+  block?: number;
   x: number;
   y: number;
   width: number;

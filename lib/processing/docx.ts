@@ -11,6 +11,7 @@ import { extractPdfVectors } from "./vector";
 import { renderDocxArtwork, renderOriginalArtwork } from "./docx-artwork";
 import { extractionPdf } from "./pdf-visible-text";
 import { recognizeScannedPages } from "./docx-ocr";
+import { readNativeLayout } from "./native-layout";
 
 export type DocxParagraph = { text: string; pageBreakBefore: boolean; heading: boolean };
 
@@ -280,7 +281,7 @@ export async function mergeDocxBodies(chunks: Uint8Array[]): Promise<Uint8Array<
 
 export type LayoutReconstructor = (context: { pages: LayoutPage[]; assets: Map<string, Uint8Array>; artwork: Map<number, Uint8Array> }) => Promise<Uint8Array>;
 
-export async function pdfToDocx(input: Uint8Array, originalName = "documento", ocrLanguage = "por+eng", reconstruct?: LayoutReconstructor) {
+export async function pdfToDocx(input: Uint8Array, originalName = "documento", ocrLanguage = "por+eng", reconstruct?: LayoutReconstructor, extraction: "poppler"|"native" = "poppler") {
   // Layout reconstruction is deterministic across Windows and Linux. Native Word
   // reflow is an explicit opt-in, since it moves table/form content unpredictably.
   if (process.env.PDF_TO_WORD_NATIVE_REFLOW === "1") {
@@ -351,6 +352,10 @@ export async function pdfToDocx(input: Uint8Array, originalName = "documento", o
       pages = [];
     }
 
+    if(extraction==="native"){
+      const native=await readNativeLayout(extractionPath);
+      pages=native.map((page,index)=>({...page,images:pages[index]?.images.length?pages[index].images:page.images}));
+    }
     const scannedArtwork = await recognizeScannedPages(pages, inputPath, directory, ocrLanguage);
     const assets = new Map<string, Uint8Array>();
     for (const page of pages) for (const image of page.images) await loadAsset(image, directory, assets);
