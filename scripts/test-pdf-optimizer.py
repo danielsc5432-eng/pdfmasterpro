@@ -95,7 +95,7 @@ class OptimizerTest(unittest.TestCase):
     def test_archival_declarations_are_not_rewritten_without_conformance_validation(self):
         source=self.source()
         with fitz.open(source) as doc:
-            doc.set_xml_metadata('<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description xmlns:pdfaid="http://www.aiim.org/pdfa/ns/id/" pdfaid:part="1" pdfaid:conformance="B"/></rdf:RDF></x:xmpmeta>')
+            doc.set_xml_metadata('<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description xmlns:p="http://www.aiim.org/pdfa/ns/id/" p:part="1" p:conformance="B"/></rdf:RDF></x:xmpmeta>')
             declared=str(self.root/"declared.pdf");doc.save(declared)
         self.assertFalse(load("pdf-preservation").preserved(declared,declared))
         self.assertFalse(load("pdf-optimize").optimize(declared,str(self.root/"optimized-declared.pdf")))
