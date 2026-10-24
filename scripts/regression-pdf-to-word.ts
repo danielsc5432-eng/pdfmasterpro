@@ -34,9 +34,10 @@ async function main() {
     const input=await readFile(path.join(directory,name));
     manifest.push({name,sha256:createHash("sha256").update(input).digest("hex"),url:upstream.find(f=>f.name===name)?.url});
     const reports:FidelityReport[]=[];
+    let candidateIndex=0;
     const started=Date.now();let record;
     try{
-      const sdk=createPdfMasterSdk({verify:async(pdf,word,budget)=>{const measured=await checkDocxFidelity(pdf,word,budget);if(measured)reports.push(measured);return measured;}});
+      const sdk=createPdfMasterSdk({verify:async(pdf,word,budget)=>{if(process.argv.includes("--keep-candidates"))await writeFile(path.join(directory,name+`.candidate-${candidateIndex++}.docx`),word);const measured=await checkDocxFidelity(pdf,word,budget);if(measured)reports.push(measured);return measured;}});
       const result=await sdk.convert(input,{name,signal:AbortSignal.timeout(300000)});
       await writeFile(path.join(directory,name+".docx"),result.output);
       record={name,outcome:result.status,engine:result.engine,report:result.report,audit:result.audit};
