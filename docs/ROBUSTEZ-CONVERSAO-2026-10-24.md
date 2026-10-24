@@ -120,3 +120,5 @@ O teste remoto revelou uma diferença importante em relação ao Windows: LibreO
 Foi criada uma bateria GitHub Actions com documentos sintéticos/públicos, sem credenciais nem PDFs particulares. O teste isolado com `node:22-trixie-slim` e LibreOffice 25 passou nas duas rotações, mantendo o mesmo código e os mesmos critérios. O Docker passa a usar essa base nas três etapas. Referências: [pacote oficial Debian](https://packages.debian.org/trixie/libreoffice-writer) e [imagem oficial Node](https://github.com/nodejs/docker-node/blob/main/22/trixie-slim/Dockerfile).
 
 O workflow também mede o corpus completo, mantém aprovação estrita nos casos de rotação e conserva artefatos sintéticos por sete dias para diagnosticar diferenças futuras. Relatórios de revisão continuam sendo revisões, mesmo que o comando exploratório termine com exit code zero.
+
+O worker inicia o Next diretamente com Node, preservando o `PORT` fornecido pelo Render. Isso elimina a tentativa de baixar pnpm durante cada inicialização. A mesma inicialização foi verificada localmente em porta isolada, com HTTP 200 e encerramento do processo de teste.
