@@ -43,6 +43,12 @@ Nenhum adaptador comercial foi habilitado nem adquirido. Um executável propriet
 
 No PDF sintético de colunas: 4920 → 4623 bytes, redução de aproximadamente 6,04%, com preservação confirmada. Isso é um exemplo, não uma taxa esperada para todos os documentos. PDFs já comprimidos podem não diminuir. O build e a verificação de tipos passaram localmente.
 
+## Validação Linux e Office
+
+[Execução final no Debian](https://github.com/danielsc5432-eng/pdfmasterpro/actions/runs/40143868996): 108 testes TypeScript e 23 testes Python aprovados, total de 131; build, tipos, teste de redução e conferência de regressões aprovados. A medição de compressão no Linux repetiu 4920 → 4623 bytes, com preservação confirmada. A bateria de conversão mantém sua referência de aprovações e revisões; otimização não transforma casos de OCR em conversões perfeitas.
+
+O adaptador também foi exercitado localmente com LibreOffice real em modo headless: Word com tabela → PDF de uma página, mantendo o texto de referência e o valor negativo `-1234.56`. Nenhum executável 3-Heights foi instalado ou habilitado.
+
 ## Fontes técnicas
 
 - [CLI do qpdf](https://qpdf.readthedocs.io/en/stable/cli.html).
