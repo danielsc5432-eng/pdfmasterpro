@@ -62,3 +62,7 @@ O SDK e a seleção automática do site agora incluem `native-unicode-layout`: e
 O OCR possui pré-processamento limitado de contraste, binarização e deskew com transformação inversa de coordenadas. A substituição de uma tentativa de OCR não pode alterar silenciosamente os termos numéricos da tentativa original. OCR continua exigindo revisão.
 
 O histórico de validação acima descreve versões anteriores. Os resultados mais recentes e as limitações estão em [ROBUSTEZ-CONVERSAO-2026-10-24.md](./ROBUSTEZ-CONVERSAO-2026-10-24.md). O adaptador de Docling continua opcional; esta atualização não representa treinamento de um modelo de IA nem ativação de um serviço externo.
+
+## Roteamento por página e recuperação
+
+O candidato nativo agora decide a montagem por página, preservando documentos mistos em um único pacote Word. A rota automática identifica formulários, digitalizações e texto girado antes da primeira tentativa; falhas individuais podem seguir para alternativas verificadas. Resultados aprovados têm prioridade sobre candidatos em revisão. Testes, resultados e limites estão em [AUTONOMIA-CONVERSAO-2026-10-24.md](./AUTONOMIA-CONVERSAO-2026-10-24.md).
