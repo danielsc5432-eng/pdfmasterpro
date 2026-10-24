@@ -7,6 +7,8 @@ import { renderPageGrid } from "./page-grid";
 import { nativePdfToDocx } from "./native";
 import { cliConvert, configuredCli } from "../processing/cli-engine";
 export { sourceDocument, validatePlan } from "./model";
+export { optimizePdf } from "../processing/optimizer";
+export { cliConvert, configuredCli } from "../processing/cli-engine";
 export type { LayoutPlanner, SourceDocument, ReconstructionPlan, TablePlan } from "./model";
 
 export type ConversionEngine = { name: string; convert(input: Uint8Array, context: {name: string; signal: AbortSignal}): Promise<Uint8Array> };

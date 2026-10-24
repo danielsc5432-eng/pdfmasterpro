@@ -110,6 +110,23 @@ class OptimizerTest(unittest.TestCase):
             doc.embfile_add("attachment.txt",b"Changed",filename="attachment.txt")
             changed=str(self.root/"changed-attachment.pdf");doc.save(changed)
         self.assertFalse(load("pdf-preservation").preserved(attached,changed))
+    def test_raster_pixels_and_dimensions_survive_recompression(self):
+        source=str(self.root/"image.pdf")
+        target=str(self.root/"image-optimized.pdf")
+        pixmap=fitz.Pixmap(fitz.csRGB,fitz.IRect(0,0,80,60),False)
+        for y in range(60):
+            for x in range(80):
+                pixmap.set_pixel(x,y,(x*3,y*4,(x+y)%256))
+        with fitz.open() as doc:
+            page=doc.new_page(width=400,height=600)
+            page.insert_image(fitz.Rect(40,40,360,280),pixmap=pixmap)
+            doc.save(source,deflate=False)
+        self.assertTrue(load("pdf-optimize").optimize(source,target))
+        self.assertTrue(load("pdf-preservation").preserved(source,target))
+        with fitz.open(source) as original,fitz.open(target) as optimized:
+            a=fitz.Pixmap(original,original[0].get_images()[0][0])
+            b=fitz.Pixmap(optimized,optimized[0].get_images()[0][0])
+            self.assertEqual((a.width,a.height,a.samples),(b.width,b.height,b.samples))
 
 if __name__=="__main__":
     unittest.main()
