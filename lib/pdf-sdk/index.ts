@@ -5,6 +5,7 @@ import { sourceDocument, validatePlan, type LayoutPlanner } from "./model";
 import { renderReconstruction } from "./render";
 import { renderPageGrid } from "./page-grid";
 import { nativePdfToDocx } from "./native";
+import { cliConvert, configuredCli } from "../processing/cli-engine";
 export { sourceDocument, validatePlan } from "./model";
 export type { LayoutPlanner, SourceDocument, ReconstructionPlan, TablePlan } from "./model";
 
@@ -18,6 +19,7 @@ export function createPdfMasterSdk(options: Options = {}) {
     {name:"positioned-ocr", convert:(input:Uint8Array,ctx:{name:string})=>pdfToDocx(input,ctx.name,"por+eng")},
     {name:"page-grid", convert:(input:Uint8Array,ctx:{name:string})=>pdfToDocx(input,ctx.name,"por+eng",renderPageGrid)},
     {name:"native-unicode-layout", convert:(input:Uint8Array,ctx:{name:string})=>nativePdfToDocx(input,ctx.name)},
+    ...(configuredCli("pdf-to-word")?[{name:"local-cli",convert:(input:Uint8Array)=>cliConvert("pdf-to-word",input,90000)}]:[]),
     {name:"pdf2docx", convert:(input:Uint8Array)=>structuralPdfToDocx(input,120000)},
   ];
   const candidates = [...engines];

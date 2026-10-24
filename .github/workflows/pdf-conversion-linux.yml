@@ -30,6 +30,8 @@ jobs:
           pnpm build
           /opt/pdf2docx/bin/python scripts/test-native-layout.py
           /opt/pdf2docx/bin/python scripts/test-pdf-fidelity.py
+          /opt/pdf2docx/bin/python scripts/test-pdf-optimizer.py
+          pnpm exec tsx scripts/smoke-optimizer.ts
       - name: Verify both quarter turns
         run: pnpm test:conversion --case=rotated-page --strict --keep-candidates
       - name: Measure the complete public and synthetic corpus
@@ -49,4 +51,10 @@ jobs:
         with:
           name: synthetic-pdf-regression-debian
           path: .vercel/regression-pdf/
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pdf-optimizer-regression-debian
+          path: .vercel/optimizer-regression/
           retention-days: 7

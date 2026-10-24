@@ -5,6 +5,7 @@ import { configuredExtraEngines, extraEngineToWord } from "./extra-engines";
 import { renderPageGrid } from "../pdf-sdk/page-grid";
 import { nativePdfToDocx } from "../pdf-sdk/native";
 import { tryVerifiedConversion } from "./conversion-policy";
+import { cliConvert, configuredCli } from "./cli-engine";
 
 /** Preserve form geometry; OCR scanned pages; rebuild native flow when appropriate. */
 export async function checkedPdfToDocx(input: Uint8Array, name: string) {
@@ -34,6 +35,10 @@ export async function checkedPdfToDocx(input: Uint8Array, name: string) {
   if(profile.primary!=="layout"&&(!report||fidelityStatus(report)==="review")&&deadline-Date.now()>60000){
     const fallback=await tryVerifiedConversion(()=>pdfToDocx(input,name,"por+eng"),{deadline,verify:(candidate,budget)=>checkDocxFidelity(input,candidate,budget)});
     if(fallback&&(!report||betterFidelity(fallback.report,report))){output=fallback.output;report=fallback.report;}
+  }
+  if(configuredCli("pdf-to-word")&&(!report||fidelityStatus(report)==="review")&&deadline-Date.now()>60000){
+    const cli=await tryVerifiedConversion(budget=>cliConvert("pdf-to-word",input,budget),{deadline,verify:(candidate,budget)=>checkDocxFidelity(input,candidate,budget)});
+    if(cli&&(!report||betterFidelity(cli.report,report))){output=cli.output;report=cli.report;}
   }
   const extras = configuredExtraEngines();
   for (let index = 0; index < extras.length; index++) {

@@ -6,6 +6,7 @@ import { degrees, PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import { PNG } from "pngjs";
 import { commandExists, execFile } from "./system";
 import { docxToPdfWithMsWord } from "./msword";
+import { cliConvert, configuredCli } from "./cli-engine";
 
 const fontColor = rgb(0.12, 0.14, 0.2);
 async function tempDir(prefix: string) { return mkdtemp(path.join(os.tmpdir(), prefix)); }
@@ -16,6 +17,10 @@ function positionFor(position: string, pageWidth: number, pageHeight: number, te
 export async function extractPdfText(input: Uint8Array) { const extractor = process.env.PDF_TEXT_EXTRACTOR || "pdftotext"; if (!(await commandExists(extractor))) throw new Error("O extrator de texto PDF não está configurado neste servidor."); const dir = await tempDir("pdfmaster-text-"); const inputPath = path.join(dir, "input.pdf"); const outputPath = path.join(dir, "output.txt"); try { await writeFile(inputPath, input); await execFile(extractor, ["-layout", "-enc", "UTF-8", inputPath, outputPath], { timeout: 120000 }); const text = await readFile(outputPath); if (!text.toString("utf8").trim()) throw new Error("Este PDF não contém texto extraível. OCR será necessário para documentos digitalizados."); return new Uint8Array(text); } finally { await rm(dir, { recursive: true, force: true }); } }
 
 export async function wordToPdf(input: Uint8Array, originalName: string) {
+  if(configuredCli("word-to-pdf")){
+    try{return await cliConvert("word-to-pdf",input,90000,originalName);}
+    catch{/* Keep the installed native Office converter when an optional CLI fails. */}
+  }
   // Motor principal: Microsoft Word (exporta o PDF nativamente). LibreOffice fica como reserva.
   const viaWord = await docxToPdfWithMsWord(input, originalName);
   if (viaWord) return viaWord;
