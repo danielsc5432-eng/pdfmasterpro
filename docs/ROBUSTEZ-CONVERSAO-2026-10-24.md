@@ -122,3 +122,9 @@ Foi criada uma bateria GitHub Actions com documentos sintéticos/públicos, sem 
 O workflow também mede o corpus completo, mantém aprovação estrita nos casos de rotação e conserva artefatos sintéticos por sete dias para diagnosticar diferenças futuras. Relatórios de revisão continuam sendo revisões, mesmo que o comando exploratório termine com exit code zero.
 
 O worker inicia o Next diretamente com Node, preservando o `PORT` fornecido pelo Render. Isso elimina a tentativa de baixar pnpm durante cada inicialização. A mesma inicialização foi verificada localmente em porta isolada, com HTTP 200 e encerramento do processo de teste.
+
+O corpus Linux identificou ainda substituição de `Arial-BoldMT` por uma fonte serifada e palavras unidas por diferenças de largura. A extração nativa agora normaliza nomes de fonte, usa substituta conhecida para Trebuchet e ajusta a largura dos runs latinos à largura original do PDF. Espaços explícitos preservam a separação das palavras. Texto e valores permanecem os da fonte; não são recriados por um modelo.
+
+Resultado final do [workflow Debian completo](https://github.com/danielsc5432-eng/pdfmasterpro/actions/runs/40138107814): 98 testes TypeScript, 13 testes Python, TypeScript e build aprovados. Corpus integral de 13 PDFs: **7 checked, 6 review, 0 bloqueados**. Rotação 90°: 0,9976; 270°: 1,0000; colunas: 0,9946; anotações: 0,9501 de similaridade visual. O texto renderizado das colunas tem cobertura de 0,9905, portanto o status checked não significa identidade de todos os pixels ou aprovação manual.
+
+A tabela CJK permanece em review: conteúdo e números completos, posição numérica 0,90 e similaridade visual 0,8382 no Linux. Os cinco casos restantes em review envolvem OCR/imagens. Não são convertidos em aprovações apenas porque o workflow exploratório fica verde.
