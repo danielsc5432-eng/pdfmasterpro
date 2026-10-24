@@ -146,6 +146,19 @@ class OptimizerTest(unittest.TestCase):
             doc.embfile_add("record",b"Same bytes",filename="changed.txt",desc="Changed description")
             changed=str(self.root/"changed-description.pdf");doc.save(changed)
         self.assertFalse(load("pdf-preservation").preserved(attached,changed))
+    def test_qpdf_can_still_optimize_custom_metadata_and_attachments(self):
+        executable=shutil.which("qpdf")
+        if not executable:
+            self.skipTest("qpdf unavailable")
+        source=self.source()
+        rich=str(self.root/"metadata-and-attachment.pdf")
+        with fitz.open(source) as doc:
+            doc.set_xml_metadata('<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description xmlns:custom="https://example.com/metadata/" custom:record="Keep this record"/></rdf:RDF></x:xmpmeta>')
+            doc.embfile_add("record",b"Preserve these bytes",filename="original.txt",desc="Original description")
+            doc.save(rich,deflate=False)
+        target=str(self.root/"optimized-rich.pdf")
+        subprocess.run([executable,"--object-streams=generate","--stream-data=compress",rich,target],check=True,capture_output=True,timeout=30)
+        self.assertTrue(load("pdf-preservation").preserved(rich,target))
 
 if __name__=="__main__":
     unittest.main()
