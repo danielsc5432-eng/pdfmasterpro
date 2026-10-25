@@ -3,6 +3,8 @@ import { OAuth2Client } from "google-auth-library";
 import { NextRequest, NextResponse } from "next/server";
 import { createSessionToken, SESSION_COOKIE } from "@/lib/auth/session";
 import { upsertUser } from "@/lib/db/users";
+import { attachDevice, deviceContext } from "@/lib/security/abuse";
+import { registrationAllowed } from "@/lib/security/registration";
 
 export const runtime = "nodejs";
 
@@ -40,6 +42,8 @@ export async function POST(request: NextRequest) {
       email: googleProfile.email,
       name: googleProfile.name || googleProfile.email.split("@")[0],
     };
+    const device = deviceContext(request);
+    if (process.env.DATABASE_URL && !await registrationAllowed(request, device, appUser.openId)) return attachDevice(authError(request, "registration_limited", mode), device, request);
     const user = process.env.DATABASE_URL ? await upsertUser(appUser) : appUser;
     const response = NextResponse.redirect(new URL("/painel", request.nextUrl.origin), { status: 303 });
     const secure = request.nextUrl.protocol === "https:";
@@ -57,8 +61,9 @@ export async function POST(request: NextRequest) {
       maxAge: 60 * 60 * 24 * 30,
       path: "/",
     });
-    return response;
-  } catch {
+    return attachDevice(response, device, request);
+  } catch (error) {
+    if (error instanceof Error && error.message === "ACCOUNT_IDENTITY_EXISTS") return authError(request, "account_identity_exists", mode);
     return authError(request, "google_auth_failed", mode);
   }
 }

@@ -9,9 +9,12 @@ import { getTool } from "@/lib/tools/catalog";
 import { resolveEntitlements } from "@/lib/billing/entitlements";
 import { PLAN_HEADER, PLAN_SIGNATURE_HEADER, signPlanHeaders } from "@/lib/billing/plan-token";
 import type { Plan } from "@/lib/plans";
-import { getCurrentUser } from "@/lib/auth/session";
+import { getCurrentUser, getPublicOrigin } from "@/lib/auth/session";
 import { testingTaskLimit } from "@/lib/billing/testing-quota";
 import { analyzeFiles, analysisOptionsSchema, validateAnalysisFiles } from "@/lib/divergences/analyze";
+import { databaseConfigured } from "@/lib/db";
+import { attachDevice, deviceContext, trustedClientIp, type DeviceContext } from "@/lib/security/abuse";
+import { reserveFreeTask } from "@/lib/security/quotas";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -22,7 +25,8 @@ const positionSchema = z.enum(["top-left", "top-center", "top-right", "center", 
 function errorResponse(message: string, status = 400) { return NextResponse.json({ error: message }, { status }); }
 function contentDisposition(filename: string) { return `attachment; filename="${filename.replace(/[^\w.-]+/g, "-")}"`; }
 function publicError(error: unknown) { const raw = error instanceof Error ? error.message : ""; if (raw.includes("não está configurado") || raw.includes("Nenhum resultado fictício")) return raw; if (/OCR será necessário|não contém texto extraível|não é uma área válida/i.test(raw)) return raw; if (/parse|header|invalid|unexpected|corrupt|encrypted|syntax|Failed to/i.test(raw)) return "Não foi possível ler o arquivo. Verifique se ele não está corrompido, protegido ou incompleto."; if (/timeout|memory|resource/i.test(raw)) return "O processamento excedeu os limites desta tarefa. Tente um arquivo menor ou menos páginas."; if (raw.startsWith("O ") || raw.startsWith("A ") || raw.startsWith("Este ") || raw.startsWith("WEBP")) return raw; return "O processador não conseguiu concluir a tarefa. Tente novamente com outro arquivo."; }
-function finish<T extends NextResponse>(response: T, request: NextRequest, session: ReturnType<typeof getSessionContext>) { return session.isNew ? attachSessionCookie(response, session.token, request) : response; }
+type ProcessingSession = ReturnType<typeof getSessionContext> & { device: DeviceContext | null };
+function finish<T extends NextResponse>(response: T, request: NextRequest, session: ProcessingSession) { const result = session.isNew ? attachSessionCookie(response, session.token, request) : response; return session.device ? attachDevice(result, session.device, request) : result; }
 function numberField(form: FormData, key: string, fallback: number) { const value = Number(form.get(key) ?? fallback); return Number.isFinite(value) ? value : fallback; }
 function planLabel(plan: Plan) { return plan.id === "free" ? "plano grátis" : "plano Premium"; }
 
@@ -32,17 +36,31 @@ export async function POST(request: NextRequest) {
   if (!toolDefinition) return errorResponse("Ferramenta desconhecida.", 404);
   if (tool === "clonemaster-ai") return errorResponse("O CloneMaster processa os arquivos localmente no navegador. Abra a ferramenta para configurar os modelos e as fontes.", 400);
   const entitlements = await resolveEntitlements(request);
+  if (process.env.PROCESSING_WORKER_ONLY === "1" && entitlements.source !== "signed") return errorResponse("Este processador aceita tarefas somente pelo site principal.", 403);
   const limits = entitlements.plan.limits;
 
   if (toolDefinition?.premium && !limits.premiumTools) return errorResponse(`A ferramenta "${toolDefinition.name}" é exclusiva do plano Premium. Assine para liberar todas as ferramentas.`, 402);
 
-  const session = getSessionContext(request);
+  const session: ProcessingSession = { ...getSessionContext(request), device: null };
   const dailyLimit = testingTaskLimit(getCurrentUser(request)?.email, limits.tasksPerDay);
   // The authenticated proxy already checks quota. A worker must not apply a
   // second free-plan quota to requests carrying a verified plan signature.
   if (Number.isFinite(dailyLimit) && entitlements.source !== "signed") {
-    const used = await countRecentTasks(session.hash);
-    if (used >= dailyLimit) return errorResponse(`Você usou as ${dailyLimit} tarefas disponíveis nas últimas 24 horas. Aguarde a renovação da cota ou assine o Premium para processar sem limites.`, 429);
+    if (request.headers.get("origin") && request.headers.get("origin") !== new URL(getPublicOrigin(request)).origin) return errorResponse("Origem inválida. Inicie a tarefa pelo site.", 403);
+    if (databaseConfigured()) {
+      try {
+        session.device = deviceContext(request);
+        const ip = trustedClientIp(request);
+        if (process.env.VERCEL === "1" && !ip) return finish(errorResponse("Não foi possível validar esta conexão. Tente novamente.", 503), request, session);
+        const blocked = await reserveFreeTask({ email: getCurrentUser(request)?.email, device: session.device.id, ip, limit: dailyLimit });
+        if (blocked) return finish(errorResponse(blocked === "network" ? "Há um volume elevado de tarefas gratuitas nesta conexão. Aguarde ou entre em contato com o suporte." : `A cota de ${dailyLimit} tarefas gratuitas desta conta ou navegador foi atingida na janela de 24 horas. Criar outra conta não renova a cota. Aguarde a renovação ou assine o Premium.`, 429), request, session);
+      } catch { return finish(errorResponse("A verificação da cota está temporariamente indisponível. Tente novamente em alguns minutos.", 503), request, session); }
+    } else if (process.env.NODE_ENV === "production") {
+      return errorResponse("A verificação da cota está indisponível. Use o site principal ou tente novamente mais tarde.", 503);
+    } else {
+      const used = await countRecentTasks(session.hash);
+      if (used >= dailyLimit) return errorResponse("A cota gratuita desta sessão foi atingida.", 429);
+    }
   }
 
   const workerUrl = process.env.PROCESSING_WORKER_URL?.trim();

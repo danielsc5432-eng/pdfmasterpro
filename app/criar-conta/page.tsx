@@ -5,6 +5,8 @@ import { LocalAuthForm } from "@/components/local-auth-form";
 import { UserRoundPlus, ShieldCheck } from "lucide-react";
 export const metadata: Metadata = { title: "Criar conta", description: "Crie sua conta PDF Master Pro." };
 const authErrors: Record<string, string> = {
+	account_identity_exists: "Já existe uma conta para esse endereço ou uma variação equivalente. Use a forma de acesso original ou fale com o suporte.",
+	registration_limited: "Limite de novos cadastros deste navegador ou conexão atingido. Aguarde 24 horas ou fale com o suporte.",
 	google_not_configured: "O cadastro com Google ainda não foi configurado.",
 	google_csrf_failed: "Não foi possível validar esta tentativa. Inicie novamente.",
 	google_email_unverified: "Use uma conta Google com endereço de e-mail verificado.",

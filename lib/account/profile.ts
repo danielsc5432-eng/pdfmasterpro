@@ -5,13 +5,15 @@ import { listProcessingTasks, sessionHash } from "@/lib/db/tasks";
 import { entitlementsForOpenId, latestSubscriptionForOpenId } from "@/lib/billing/entitlements";
 import { getTool } from "@/lib/tools/catalog";
 import { testingTaskLimit } from "@/lib/billing/testing-quota";
+import { readDeviceToken } from "@/lib/security/abuse";
+import { freeUsage } from "@/lib/security/quotas";
 
 export const preferencesSchema = z.object({
   displayName: z.string().trim().min(2).max(80).refine(value => !/\p{C}/u.test(value), "Use um nome sem caracteres de controle."),
   preferredTool: z.string().max(80).refine(value => Boolean(getTool(value)), "Escolha uma ferramenta disponível."),
 }).strict();
 
-export async function accountData(user: AppUser, taskToken?: string) {
+export async function accountData(user: AppUser, taskToken?: string, deviceToken?: string) {
   const fallback = { user: { name: user.name, email: user.email, provider: user.openId.startsWith("google:") ? "Google" : user.openId.startsWith("local:") ? "E-mail e senha" : "Manus" }, preferences: { displayName: user.name, preferredTool: "detector-divergencias" }, memberSince: null as string | null, storageAvailable: false, plan: null as null | { name: string; premium: boolean; maxFileBytes: number; maxFiles: number; dailyLimit: number | null; until: string | null }, usage: null as number | null, recent: null as null | { id: string; tool: string; status: string; createdAt: string }[] };
   if (!databaseConfigured()) return fallback;
   const details = await query<{ display_name: string; preferred_name: string | null; preferred_tool: string | null; created_at: Date }>("SELECT u.display_name, u.created_at, p.display_name AS preferred_name, p.preferred_tool FROM users u LEFT JOIN user_preferences p ON p.open_id = u.open_id WHERE u.open_id = ? LIMIT 1", [user.openId]).catch(() => null);
@@ -26,7 +28,7 @@ export async function accountData(user: AppUser, taskToken?: string) {
   const hash = validToken ? sessionHash(validToken) : null;
   const [entitlements, subscription, usage, recent] = await Promise.allSettled([
     entitlementsForOpenId(user.openId, true), latestSubscriptionForOpenId(user.openId, true),
-    hash ? query<{ total: string | number }>("SELECT COUNT(*) AS total FROM processing_tasks WHERE session_hash = ? AND created_at > CURRENT_TIMESTAMP - INTERVAL '24 hours'", [hash]) : Promise.resolve([{ total: 0 }]),
+    freeUsage(user.email, readDeviceToken(deviceToken) ?? undefined).then(total => [{ total }]),
     hash ? listProcessingTasks(hash) : Promise.resolve([]),
   ]);
   if (entitlements.status === "fulfilled") {

@@ -9,7 +9,7 @@ function error(message: string, status: number) { return NextResponse.json({ err
 export async function GET(request: NextRequest) {
   const user = getCurrentUser(request);
   if (!user) return error("Entre na sua conta para acessar o perfil.", 401);
-  return NextResponse.json(await accountData(user, request.cookies.get("pdfmaster_session")?.value), { headers });
+  return NextResponse.json(await accountData(user, request.cookies.get("pdfmaster_session")?.value, request.cookies.get("pdfmaster_device")?.value), { headers });
 }
 
 export async function PATCH(request: NextRequest) {

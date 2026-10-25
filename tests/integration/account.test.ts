@@ -11,6 +11,7 @@ import { POST as cancel } from "../../app/api/billing/cancel/route";
 import { createSessionToken, readSessionToken, SESSION_COOKIE } from "../../lib/auth/session";
 import { closeDb } from "../../lib/db";
 import { getSessionContext, sessionHash } from "../../lib/db/tasks";
+import { abuseHash } from "../../lib/security/abuse";
 
 // Real handlers, SQL, validation and signatures. Only the PostgreSQL HTTP
 // transport and billing provider boundary are replaced; no external requests.
@@ -23,6 +24,9 @@ test("conta: preferências privadas, sessão e cancelamento confirmado", async t
   process.env.NEXT_PUBLIC_SITE_URL = "http://localhost";
   process.env.MERCADOPAGO_ACCESS_TOKEN = "isolated-provider";
   delete process.env.MANUS_JWT_SECRET; delete process.env.MANUS_PROJECT_ID;
+  db.exec("CREATE TABLE abuse_budgets (actor_hash CHAR(64) PRIMARY KEY, window_start TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP, used INTEGER)");
+  db.prepare("INSERT INTO abuse_budgets (actor_hash, used) VALUES (?, 1)").run(abuseHash("free-account", "account@example.invalid"));
+  db.prepare("INSERT INTO abuse_budgets (actor_hash, used) VALUES (?, 99)").run(abuseHash("free-account", "other@example.invalid"));
   await closeDb();
   const user = { openId: "google:account-test", email: "account@example.invalid", name: "Original name" };
   const cookie = `${SESSION_COOKIE}=${createSessionToken(user)}; pdfmaster_session=${"a".repeat(64)}`;
@@ -63,7 +67,7 @@ test("conta: preferências privadas, sessão e cancelamento confirmado", async t
       assert.equal((await PATCH(new NextRequest("http://localhost/api/account/profile", { method: "PATCH" }))).status, 401);
       assert.equal((await GET(request())).headers.get("cache-control"), "private, no-store");
     });
-    await t.test("histórico e uso pertencem apenas à sessão atual", async () => {
+    await t.test("histórico fica na sessão e uso gratuito pertence à conta", async () => {
       const data = await snapshot(); assert.equal(data.usage, 1); assert.equal(data.storageAvailable, true);
       assert.deepEqual(data.recent.map((item: { id: string }) => item.id), ["own-task"]);
       assert.equal(data.user.email, user.email); assert.equal(data.user.provider, "Google");

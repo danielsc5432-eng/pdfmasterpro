@@ -13,7 +13,7 @@ async function main() {
   process.env.AUTH_SESSION_SECRET = "local-auth-database-test-only"; delete process.env.MANUS_JWT_SECRET;
   const query: typeof dbQuery = async <T>(sql: string, params: unknown[] = []) => (await db.query(toPlaceholders(sql), params)).rows as T[];
   try {
-    for (const file of ["002_users.sql", "006_local_accounts.sql"]) await db.exec(await readFile(`db/migrations/${file}`, "utf8"));
+    for (const file of ["002_users.sql", "006_local_accounts.sql", "007_abuse_protection.sql"]) await db.exec(await readFile(`db/migrations/${file}`, "utf8"));
     let code = ""; let sends = 0;
     const send = async (_email: string, value: string) => { code = value; sends++; };
     await registerLocal("Pessoa Teste", "person@example.com", "Minha frase secreta 123", send, query);

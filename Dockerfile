@@ -14,6 +14,7 @@ RUN pnpm build
 FROM node:22-trixie-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+ENV PROCESSING_WORKER_ONLY=1
 ENV PORT=3000
 ENV PDF_RENDERER=pdftoppm
 ENV PDF_COMPRESSOR=gs
