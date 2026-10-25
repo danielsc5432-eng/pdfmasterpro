@@ -22,6 +22,8 @@ test("compares monetary values exactly, preserves currency and normalizes Brazil
   assert.equal(findings.length, 1); assert.equal(findings[0].classification, "objective");
   assert.ok(findings[0].evidence.every(item => evidenceIsValid(item, docs)));
   assert.notEqual(fieldsOf(source("c", ["Total: US$ 1,000"] ))[0].canonical, fieldsOf(source("d", ["Total: US$ 1.00"]))[0].canonical);
+  assert.equal(compareDocuments(pair("Total: R$ 100,00", "Total: 100,00"), options).findings[0].classification, "inconclusive");
+  assert.equal(compareDocuments(pair("Total: R$ 1.23,45", "Total: R$ 123,45"), options).findings[0].classification, "inconclusive");
 });
 test("dates, invalid dates, names and leading zeros remain distinct", () => {
   assert.equal(compareDocuments(pair("Vencimento: 24/10/2026", "Vencimento: 2026-10-24"), options).findings.length, 0);

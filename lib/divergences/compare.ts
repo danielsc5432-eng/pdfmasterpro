@@ -88,12 +88,14 @@ export function compareDocuments(documents:SourceDocument[],options:AnalysisOpti
       if(x.canonical===y.canonical)continue;
       const sameContext=!x.context||!y.context||x.context===y.context;
       if(!sameContext){warnings.push(`Contextos diferentes no campo «${field.label}»: confira as seções originais.`);continue;}
-      const valid=x.valid&&y.valid;
+      const ambiguousUnit=field.category==="value"&&(
+        /^[A-Z]{3}:/.test(x.canonical)!==/^[A-Z]{3}:/.test(y.canonical)||x.canonical.endsWith("%")!==y.canonical.endsWith("%"));
+      const valid=x.valid&&y.valid&&!ambiguousUnit;
       const textual=field.category==="clause"&&similarity(x.canonical,y.canonical)>.93;
       const objective=valid&&commonIdentity&&!incompatibleScope&&!contractMismatch&&["value","date","identifier"].includes(field.category);
       add({category:field.category,classification:!valid?"inconclusive":textual?"textual":objective?"objective":"possible",title:`${field.label}: informações diferentes`,explanation:!valid?"O formato de pelo menos um valor não foi reconhecido com segurança. Confira as evidências.":field.category==="clause"?"A redação mudou. A comparação textual não determina equivalência jurídica, fraude ou descumprimento.":objective?"O mesmo campo apresenta informações distintas em documentos com um identificador comum. A diferença de dados é objetiva; sua relevância depende da conferência humana.":"O mesmo rótulo apresenta conteúdos diferentes. A equivalência de objeto, versão e finalidade precisa ser conferida antes de concluir incompatibilidade.",confidence:objective?"high":valid?"medium":"low",documents:documentIds,evidence:[x.evidence,y.evidence]});
     }
   }
-  if(options.modes.includes("custom"))warnings.push("A seleção personalizada por regras usa palavras-chave de rótulos. Entendimento livre de instruções depende da IA semântica opcional.");
+  if(options.modes.includes("custom"))warnings.push("A seleção personalizada usa palavras-chave de rótulos, sem interpretação livre de instruções. A IA opcional revisa somente pares de cláusulas já identificados.");
   return {findings,warnings:[...new Set(warnings)].slice(0,80),truncated};
 }

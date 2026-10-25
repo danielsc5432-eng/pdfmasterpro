@@ -10,6 +10,8 @@ export function decimal(value:string):string|null{
   else if(dot>=0&&text.length-dot-1!==3)separator=".";
   const parts=separator?text.split(separator):[text];
   if(parts.length>2)return null;
+  if(separator&&!parts[1])return null;
+  if(/[.,]/.test(parts[0])&&!/^\d{1,3}([.,])\d{3}(?:\1\d{3})*$/.test(parts[0]))return null;
   const whole=parts[0].replace(/[.,]/g,"").replace(/^0+(?=\d)/,"");
   const fraction=(parts[1]??"").replace(/0+$/,"");
   if(!/^\d+$/.test(whole)||!/^\d*$/.test(fraction))return null;
