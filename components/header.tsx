@@ -50,7 +50,7 @@ export function Header() {
   }
 
   const links = [
-    { href: "/ferramentas/detector-divergencias", label: "Comparar PDFs" },
+    { href: "/ferramentas/detector-divergencias", label: "Detector de Divergências" },
     { href: "/ferramentas", label: "Ferramentas" },
     { href: "/precos", label: "Preços" },
   ];
