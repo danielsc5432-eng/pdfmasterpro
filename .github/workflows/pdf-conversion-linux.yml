@@ -21,6 +21,8 @@ jobs:
           fc-cache -f
           python3 -m venv /opt/pdf2docx
           /opt/pdf2docx/bin/pip install --no-cache-dir -r requirements-pdf2docx.txt
+          python3 -m venv /opt/semantic-ai-tests
+          /opt/semantic-ai-tests/bin/pip install --no-cache-dir -r deploy/semantic-ai/requirements-test.txt
           corepack enable
           pnpm install --frozen-lockfile
       - name: Verify code and native geometry
@@ -32,6 +34,7 @@ jobs:
           /opt/pdf2docx/bin/python scripts/test-pdf-fidelity.py
           /opt/pdf2docx/bin/python scripts/test-pdf-optimizer.py
           /opt/pdf2docx/bin/python scripts/test-divergences.py
+          /opt/semantic-ai-tests/bin/python scripts/test-semantic-ai.py
           pnpm exec tsx scripts/smoke-optimizer.ts
       - name: Verify both quarter turns
         run: pnpm test:conversion --case=rotated-page --strict --keep-candidates
