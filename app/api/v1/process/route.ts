@@ -11,6 +11,7 @@ import { PLAN_HEADER, PLAN_SIGNATURE_HEADER, signPlanHeaders } from "@/lib/billi
 import type { Plan } from "@/lib/plans";
 import { getCurrentUser } from "@/lib/auth/session";
 import { testingTaskLimit } from "@/lib/billing/testing-quota";
+import { analyzeFiles, analysisOptionsSchema, validateAnalysisFiles } from "@/lib/divergences/analyze";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -44,6 +45,7 @@ export async function POST(request: NextRequest) {
   }
 
   const workerUrl = process.env.PROCESSING_WORKER_URL?.trim();
+  if (tool === "detector-divergencias" && Number(request.headers.get("content-length") || 0) > 26 * 1024 * 1024) return errorResponse("A análise permite até 25 MB de PDFs por tarefa.", 413);
   if (workerUrl) {
     // O worker é um processador sem estado: não tem banco nem sessão. A
     // persistência do histórico e a contagem do limite diário acontecem aqui,
@@ -67,6 +69,7 @@ export async function POST(request: NextRequest) {
         method: "POST",
         headers: proxyHeaders,
         body: request.body,
+        signal: request.signal,
         duplex: "half",
       } as RequestInit);
       const headers = new Headers(response.headers);
@@ -87,7 +90,8 @@ export async function POST(request: NextRequest) {
   const declaredLength = Number(request.headers.get("content-length") || 0); if (declaredLength > MAX_REQUEST_BYTES) return errorResponse("A tarefa excede o limite de upload desta versão. Use arquivos menores ou menos arquivos.", 413);
   let form: FormData; try { form = await request.formData(); } catch { return errorResponse("Não foi possível receber os arquivos. Tente novamente.", 400); }
   const entries = form.getAll("files").filter((value): value is File => typeof value !== "string" && value instanceof File); if (!entries.length) return errorResponse("Envie pelo menos um arquivo."); if (entries.length > limits.maxFilesPerTask) return errorResponse(`Seu ${planLabel(entitlements.plan)} permite até ${limits.maxFilesPerTask} arquivos por tarefa.`);
-  const multiFileTool = tool === "juntar-pdf" || tool === "imagens-para-pdf"; if (!multiFileTool && entries.length > 1) return errorResponse("Esta ferramenta processa um arquivo por vez. Remova os arquivos extras e tente novamente.");
+  const multiFileTool = tool === "juntar-pdf" || tool === "imagens-para-pdf" || tool === "detector-divergencias"; if (!multiFileTool && entries.length > 1) return errorResponse("Esta ferramenta processa um arquivo por vez. Remova os arquivos extras e tente novamente.");
+  if (tool === "detector-divergencias") { try { validateAnalysisFiles(entries); } catch (error) { return errorResponse(publicError(error), 422); } }
   const isImages = tool === "imagens-para-pdf"; const isWord = tool === "word-para-pdf"; const isOcr = tool === "ocr-pdf";
   const allowed: FileKind[] = isImages ? ["jpg", "png", "webp"] : isWord ? ["doc", "docx"] : isOcr ? ["pdf", "jpg", "png"] : ["pdf"];
   const fileLimits = { maxFileBytes: limits.maxFileBytes, planLabel: planLabel(entitlements.plan) };
@@ -96,6 +100,14 @@ export async function POST(request: NextRequest) {
   const taskId = await createProcessingTask({ sessionHash: session.hash, toolSlug: tool, fileCount: files.length, inputBytes: files.reduce((total, file) => total + file.bytes.byteLength, 0) });
   const invalidTask = async (message: string, status = 400) => { await markProcessingTaskFailed(taskId, "invalid_options").catch(() => undefined); return finish(errorResponse(message, status), request, session); };
   try {
+    if (tool === "detector-divergencias") {
+      let options;
+      try { options = analysisOptionsSchema.parse(JSON.parse(String(form.get("options") || "{}"))); }
+      catch { return invalidTask("Selecione um modo válido e descreva a análise personalizada quando necessário.", 422); }
+      const result = await analyzeFiles(files, options, request.signal);
+      await markProcessingTaskCompleted(taskId, Buffer.byteLength(JSON.stringify(result)), "application/json");
+      return finish(NextResponse.json(result, { headers: { "Cache-Control": "private, no-store" } }), request, session);
+    }
     let output: Uint8Array; let filename = `${safeFilename(files[0].name, "documento")}-resultado.pdf`;
     const qualityHeaders: Record<string,string> = {};
     if (tool === "juntar-pdf") { output = await mergePdfs(files.map((file) => file.bytes)); filename = "pdf-master-combinado.pdf"; }

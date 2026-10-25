@@ -31,6 +31,7 @@ jobs:
           /opt/pdf2docx/bin/python scripts/test-native-layout.py
           /opt/pdf2docx/bin/python scripts/test-pdf-fidelity.py
           /opt/pdf2docx/bin/python scripts/test-pdf-optimizer.py
+          /opt/pdf2docx/bin/python scripts/test-divergences.py
           pnpm exec tsx scripts/smoke-optimizer.ts
       - name: Verify both quarter turns
         run: pnpm test:conversion --case=rotated-page --strict --keep-candidates
