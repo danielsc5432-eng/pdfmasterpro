@@ -49,6 +49,14 @@ No PDF sintético de colunas: 4920 → 4623 bytes, redução de aproximadamente 
 
 O adaptador também foi exercitado localmente com LibreOffice real em modo headless: Word com tabela → PDF de uma página, mantendo o texto de referência e o valor negativo `-1234.56`. Nenhum executável 3-Heights foi instalado ou habilitado.
 
+## Rodada adicional: metadados e anexos
+
+Testes adversariais reproduziram duas lacunas do verificador: ele aceitava a remoção do XML/XMP embutido e mudanças em nome/descrição de anexo quando os bytes do anexo e a aparência da página continuavam iguais. Isso demonstra uma falha de validação; não é evidência de perda em arquivos reais de clientes.
+
+O verificador agora compara o XML/XMP completo e os atributos dos anexos, permitindo variar somente o comprimento comprimido do stream. Os dois testes que falhavam passaram após a correção. Um teste positivo com qpdf confirmou que documentos com XMP e anexos intactos continuam aceitos.
+
+[Validação Linux desta correção](https://github.com/danielsc5432-eng/pdfmasterpro/actions/runs/40144789927): 108 testes TypeScript e 26 Python aprovados, total de 134; tipos, build e referência de regressão de conversão aprovados. O otimizador foi exercitado em dez PDFs sintéticos com texto, valores, colunas, rotação, tamanhos diferentes, páginas gráficas e digitalizações: sete reduziram de tamanho e três mantiveram os bytes originais. Todos passaram na conferência correspondente. O comparativo amostrado não representa uma garantia de 100% para qualquer PDF.
+
 ## Fontes técnicas
 
 - [CLI do qpdf](https://qpdf.readthedocs.io/en/stable/cli.html).
