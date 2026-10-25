@@ -1,5 +1,11 @@
 # Lightning AI: serviço de revisão em CPU gratuita
 
+## Bloqueio de acesso verificado em 24/10/2026
+
+O cadastro `/sign-up` e o botão **Open app** atualmente redirecionam para o [aviso oficial de incidente de segurança de outubro de 2026](https://lightning.ai/security-incident/). A Lightning informa que a plataforma de Studios permanece inacessível durante a investigação. **Não é possível concluir este cadastro/deploy agora.** Antes de seguir os passos abaixo, confirmar no canal oficial que o acesso foi restaurado. As condições de CPU gratuita descritas na página de preços não comprovam disponibilidade atual do serviço.
+
+Nenhuma conta Lightning, credencial GitHub ou segredo de produção foi conectado por esta implementação. Os arquivos abaixo são uma preparação, não uma integração ativa. A IA existente no navegador e o site continuam independentes desse serviço.
+
 Preparado para **um Studio CPU gratuito** na conta do proprietário. Não provisiona máquinas, não escolhe GPU, não altera assinatura e não contorna o reinício exigido pelo plano. O usuário ainda vai criar a conta; nenhum Studio, modelo ou endpoint Lightning está ativo nesta validação.
 
 A documentação atual anuncia 4 núcleos/16 GB para o Studio CPU gratuito e exige reinício a cada quatro horas. [Preço e condições](https://lightning.ai/pricing/). O tempo de despertar de um Studio pode ultrapassar o orçamento HTTP do site. Durante essas interrupções, o detector mantém as regras e a opção de IA no navegador; não se deve anunciar disponibilidade contínua de revisão generativa.
