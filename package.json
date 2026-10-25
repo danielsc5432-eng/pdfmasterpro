@@ -15,6 +15,9 @@
     "test:tools": "tsx scripts/smoke-tools.ts",
     "test:routes": "node scripts/smoke-routes.mjs",
     "test:ui": "node scripts/smoke-ui.mjs",
+    "test:clonemaster": "tsx --test tests/unit/clonemaster.test.ts",
+    "test:clonemaster:fixtures": "tsx scripts/prepare-clonemaster-fixtures.ts",
+    "test:clonemaster:ui": "node scripts/smoke-clonemaster.mjs",
     "convert:sdk": "tsx scripts/convert-sdk.ts",
     "test:conversion": "tsx scripts/regression-pdf-to-word.ts",
     "test:billing": "tsx --test tests/integration/billing.test.ts",
@@ -38,7 +41,9 @@
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-hook-form": "^7.89.0",
-    "zod": "^3.25.76"
+    "saxes": "6.0.0",
+    "ssf": "0.11.2",
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

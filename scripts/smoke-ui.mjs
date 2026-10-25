@@ -47,6 +47,38 @@ try {
   const fileA = path.join(directory, "first.pdf"), fileB = path.join(directory, "second.pdf");
   await writeFile(fileA, await pdf.save()); await writeFile(fileB, await pdf.save());
 
+  await navigate("/ferramentas");
+  const categoryGroups = [
+    ["Organizar", ["juntar-pdf", "dividir-pdf", "girar-pdf", "organizar-pdf"]],
+    ["Converter", ["imagens-para-pdf", "pdf-para-imagens", "pdf-para-word", "word-para-pdf"]],
+    ["Otimizar", ["comprimir-pdf"]], ["Editar", ["marca-dagua", "numerar-paginas", "editar-metadados"]],
+    ["OCR", ["ocr-pdf", "extrair-texto"]], ["Segurança", ["assinar-pdf", "proteger-pdf", "redigir-pdf"]],
+    ["Analisar", ["detector-divergencias"]], ["Automatizar", ["clonemaster-ai"]],
+  ];
+  for (const [category, slugs] of categoryGroups) {
+    await evaluate(`Array.from(document.querySelectorAll('.category-pill')).find(a=>a.textContent===${JSON.stringify(category)}).click()`);
+    await waitFor(`document.querySelector('.category-pill[aria-current="page"]')?.textContent === ${JSON.stringify(category)}`);
+    assert.deepEqual((await evaluate("Array.from(document.querySelectorAll('.tool-card')).map(a=>a.getAttribute('href').split('/').pop())")).sort(), [...slugs].sort());
+  }
+  await evaluate("history.back()");
+  await waitFor("document.querySelector('.category-pill[aria-current=page]')?.textContent === 'Analisar'");
+  assert.ok(await evaluate("document.querySelector('.tool-card').getAttribute('href').endsWith('detector-divergencias')"));
+  await evaluate("history.forward()");
+  await waitFor("document.querySelector('.category-pill[aria-current=page]')?.textContent === 'Automatizar'");
+  await evaluate("Array.from(document.querySelectorAll('.category-pill')).find(a=>a.textContent==='Todos').click()");
+  await waitFor("document.querySelectorAll('.tool-card').length === 19");
+  await navigate("/ferramentas?busca=pdf&categoria=Converter");
+  await evaluate("Array.from(document.querySelectorAll('.category-pill')).find(a=>a.textContent==='Otimizar').click()");
+  await waitFor("document.querySelectorAll('.tool-card').length === 1 && document.querySelector('.tool-card').getAttribute('href').endsWith('comprimir-pdf')");
+  assert.equal(await evaluate("new URLSearchParams(location.search).get('busca')"), "pdf");
+  await navigate("/ferramentas?busca=sem-resultado-123&categoria=OCR");
+  await waitFor("!!document.querySelector('.empty-panel .button')");
+  await evaluate("document.querySelector('.empty-panel .button').click()");
+  await waitFor("document.querySelectorAll('.tool-card').length === 19 && location.search === ''");
+  await navigate("/ferramentas?categoria=inexistente");
+  assert.equal(await evaluate("document.querySelector('.category-pill[aria-current=page]').textContent"), "Todos");
+  console.log("PASS all nine category filters, active state, combined search, empty-state reset and unknown category fallback");
+
   await navigate("/");
   assert.equal(await evaluate("document.querySelector('.flagship-cta').getAttribute('href')"), "/ferramentas/detector-divergencias");
   assert.ok(await evaluate("document.querySelector('.comparison-preview').textContent.includes('Exemplo ilustrativo')"));

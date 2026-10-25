@@ -30,6 +30,7 @@ export async function POST(request: NextRequest) {
   const tool = request.nextUrl.searchParams.get("tool"); if (!tool) return errorResponse("Selecione uma ferramenta de processamento.");
   const toolDefinition = getTool(tool);
   if (!toolDefinition) return errorResponse("Ferramenta desconhecida.", 404);
+  if (tool === "clonemaster-ai") return errorResponse("O CloneMaster processa os arquivos localmente no navegador. Abra a ferramenta para configurar os modelos e as fontes.", 400);
   const entitlements = await resolveEntitlements(request);
   const limits = entitlements.plan.limits;
 

@@ -1,6 +1,7 @@
 export type ToolStatus = "ready" | "needs-config" | "coming-soon";
 export type ToolDefinition = { slug: string; name: string; description: string; category: string; icon: string; formats: string[]; status: ToolStatus; popular?: boolean; premium?: boolean; features: string[] };
 export const tools: ToolDefinition[] = [
+  { slug: "clonemaster-ai", name: "CloneMaster AI", description: "Preencha cópias de modelos TXT, INI ou CFG usando colunas de uma planilha XLSX, preservando os demais bytes.", category: "Automatizar", icon: "Copy", formats: ["Modelos TXT / INI / CFG", "Fontes XLSX"], status: "ready", features: ["Mapeamento de campos com confirmação", "Um arquivo por registro e download ZIP", "Prévia antes/depois", "Processamento local no navegador"] },
   { slug: "detector-divergencias", name: "Detector de divergências", description: "Compare PDFs, confira valores, datas e cláusulas com evidências e revisão humana.", category: "Analisar", icon: "ShieldCheck", formats: ["PDF"], status: "ready", popular: true, features: ["Comparar de 2 a 5 PDFs", "Evidências com página e trecho", "Revisão semântica opcional", "Relatório PDF"] },
   { slug: "juntar-pdf", name: "Juntar PDF", description: "Combine vários PDFs em um único documento, na ordem que você escolher.", category: "Organizar", icon: "Combine", formats: ["PDF"], status: "ready", popular: true, features: ["Reordenar arquivos", "Remover arquivos da fila", "Baixar um PDF final"] },
   { slug: "dividir-pdf", name: "Dividir PDF", description: "Separe um intervalo ou gere um ZIP com uma página por arquivo.", category: "Organizar", icon: "Scissors", formats: ["PDF"], status: "ready", popular: true, features: ["Escolher intervalo", "Separar cada página", "Baixar resultados em ZIP"] },
@@ -21,4 +22,4 @@ export const tools: ToolDefinition[] = [
   { slug: "redigir-pdf", name: "Redigir PDF", description: "Queime uma área selecionada na imagem da página, removendo o conteúdo subjacente daquela área.", category: "Segurança", icon: "ShieldCheck", formats: ["PDF"], status: "ready", premium: true, features: ["Coordenadas em pontos", "Página específica ou todas", "Rasterização para impedir extração do trecho"] },
 ];
 export function getTool(slug: string) { return tools.find((tool) => tool.slug === slug); }
-export const categories = ["Todos", "Organizar", "Converter", "Otimizar", "Editar", "OCR", "Segurança", "Analisar"];
+export const categories = ["Todos", "Organizar", "Converter", "Otimizar", "Editar", "OCR", "Segurança", "Analisar", "Automatizar"];

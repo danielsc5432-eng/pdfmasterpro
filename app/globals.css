@@ -122,6 +122,10 @@ button { cursor: pointer; }
 .category-row { max-width: 1180px; margin: 0 auto 24px; display: flex; gap: 8px; flex-wrap: wrap; }
 .category-pill { border: 1px solid var(--border); color: var(--muted-strong); background: var(--surface); border-radius: 99px; padding: 8px 12px; font-size: 12px; font-weight: 700; }
 .category-pill.active, .category-pill:hover { color: var(--secondary); border-color: color-mix(in srgb, var(--secondary) 45%, var(--border)); background: var(--secondary-soft); }
+.category-pill:focus-visible { outline: 2px solid var(--secondary); outline-offset: 3px; }
+.dark .category-pill.active, .dark .category-pill:hover { color: #c4bfff; }
+.dark .category-pill:focus-visible { outline-color: #c4bfff; }
+.catalog-result-count { max-width: 1180px; margin: 0 auto 18px; color: var(--muted-strong); font-size: 14px; }
 .feature-band { max-width: 1180px; margin: 0 auto; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
 .feature-card { padding: 20px; border-radius: 18px; background: var(--surface-soft); border: 1px solid var(--border); }
 .feature-card svg { color: var(--primary); }
