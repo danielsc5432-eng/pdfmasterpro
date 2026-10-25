@@ -1,7 +1,7 @@
 "use client";
 
 import { Menu, Moon, Search, Sun, X } from "lucide-react";
-import Image from "next/image";
+import { BrandSymbol } from "@/components/brand-symbol";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
@@ -34,6 +34,7 @@ export function Header() {
   }
 
   const links = [
+    { href: "/ferramentas/detector-divergencias", label: "Comparar PDFs" },
     { href: "/ferramentas", label: "Ferramentas" },
     { href: "/precos", label: "Preços" },
   ];
@@ -42,7 +43,7 @@ export function Header() {
     <header className="site-header">
       <div className="header-inner">
         <Link className="brand" href="/" aria-label="PDF Master Pro, início">
-          <Image className="brand-mark" src="/brand/logo.png" alt="" width={40} height={34} priority />
+          <BrandSymbol />
           <span className="brand-name">PDF Master Pro</span>
         </Link>
         <nav className="desktop-nav" aria-label="Navegação principal">

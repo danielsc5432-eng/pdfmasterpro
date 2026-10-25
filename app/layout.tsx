@@ -20,9 +20,9 @@ export const metadata: Metadata = {
     siteName: "PDF Master Pro",
     title: "PDF Master Pro — Ferramentas para PDF",
     description: "Todas as ferramentas para seus documentos em um só lugar.",
-    images: [{ url: "/brand/og-logo.png", width: 1200, height: 630, alt: "PDF Master Pro" }],
+    images: [{ url: "/brand/pdfmasterpro-full.png", width: 1536, height: 1024, alt: "PDF Master Pro" }],
   },
-  twitter: { card: "summary_large_image", images: ["/brand/og-logo.png"] },
+  twitter: { card: "summary_large_image", images: ["/brand/pdfmasterpro-full.png"] },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

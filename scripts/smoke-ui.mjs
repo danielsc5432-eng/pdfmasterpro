@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { PDFDocument } from "pdf-lib";
@@ -46,6 +46,29 @@ try {
   const fileA = path.join(directory, "first.pdf"), fileB = path.join(directory, "second.pdf");
   await writeFile(fileA, await pdf.save()); await writeFile(fileB, await pdf.save());
 
+  await navigate("/");
+  assert.equal(await evaluate("document.querySelector('.flagship-cta').getAttribute('href')"), "/ferramentas/detector-divergencias");
+  assert.ok(await evaluate("document.querySelector('.comparison-preview').textContent.includes('Exemplo ilustrativo')"));
+  assert.ok(await evaluate("document.querySelector('.brand-symbol img').complete && document.querySelector('.brand-symbol img').naturalWidth > 0"));
+  for (const width of [320, 390, 768, 920, 1440]) {
+    await cdp("Emulation.setDeviceMetricsOverride", { width, height: 1000, deviceScaleFactor: 1, mobile: width < 700 });
+    assert.ok(await evaluate("document.documentElement.scrollWidth <= innerWidth + 1"), "Home overflow at width " + width);
+  }
+  if (process.env.SMOKE_SCREENSHOT_DIR) {
+    await mkdir(process.env.SMOKE_SCREENSHOT_DIR, { recursive: true });
+    for (const [name, width, height, dark] of [["home-desktop", 1440, 1000, false], ["home-mobile", 390, 1100, false], ["home-dark", 1440, 1000, true]]) {
+      await cdp("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: width < 700 });
+      await evaluate(`document.documentElement.classList.toggle('dark', ${dark}); window.scrollTo(0, 0)`);
+      await new Promise(resolve => setTimeout(resolve, 250));
+      const shot = await cdp("Page.captureScreenshot", { format: "png" });
+      await writeFile(path.join(process.env.SMOKE_SCREENSHOT_DIR, name + ".png"), Buffer.from(shot.data, "base64"));
+    }
+    await evaluate("document.documentElement.classList.remove('dark')");
+  }
+  await cdp("Emulation.clearDeviceMetricsOverride");
+  await evaluate("document.querySelector('.flagship-cta').click()");
+  await waitFor("!!document.querySelector('.divergence-workspace')");
+  console.log("PASS flagship CTA, illustrative demo, supplied logo and responsive homepage");
   await navigate("/");
   await selectFiles([fileA, fileB]);
   await waitFor("!!document.querySelector('.upload-card a.button')");

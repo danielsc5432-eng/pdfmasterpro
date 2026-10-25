@@ -12,7 +12,7 @@ async function check(route, status, init) {
   passed++;
   return response;
 }
-for (const route of pages) await check(route, 200);
+for (const route of [...pages, "/icon", "/apple-icon"]) await check(route, 200);
 await check("/api/auth/me", 401);
 await check("/ferramentas/inexistente", 404);
 for (const route of ["/api/billing/checkout", "/api/billing/checkout-once", "/api/billing/cancel"]) await check(route, 401, { method: "POST" });
