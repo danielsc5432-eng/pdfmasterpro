@@ -26,6 +26,6 @@ Para repetir o teste opcional da conta, use build e servidor **locais** com `NEX
 
 ## Limites da evidência
 
-Os testes não provam funcionamento perfeito para qualquer PDF. Login com conta Google real e cobrança/cancelamento financeiro reais não foram executados nesta entrega. O endereço público de suporte existente aguarda confirmação do proprietário; abrir um link `mailto:` não comprova que a caixa postal recebe mensagens. Não foram contratados serviços ou ativados modelos externos.
+Os testes não provam funcionamento perfeito para qualquer PDF. Login com conta Google real e cobrança/cancelamento financeiro reais não foram executados nesta entrega. Após o proprietário confirmar que ainda precisa criar a caixa de suporte, o endereço provisório foi retirado. `/contato` exibe orientações e informa o canal em preparação até configurar uma caixa real em `SUPPORT_EMAIL`. Instruções em `EMAIL-SUPORTE.md`; não foram contratados serviços ou ativados modelos externos.
 
 A Vercel aplica a migração antes do build de produção; falha da migração impede a publicação. O serviço Render mantém o processamento nativo; sua disponibilidade e recursos continuam sujeitos ao plano contratado.
