@@ -6,7 +6,7 @@ type TaskStatus = "processing" | "completed" | "failed";
 type TaskRow = { id: string; tool_slug: string; status: TaskStatus; file_count: number; input_bytes: number | string; output_bytes: number | string | null; output_type: string | null; error_code: string | null; created_at: Date; completed_at: Date | null; expires_at: Date | null };
 
 export function sessionHash(token: string) { return createHash("sha256").update(token).digest("hex"); }
-export function getSessionContext(request: NextRequest) { const existing = request.cookies.get("pdfmaster_session")?.value; const token = existing && /^[a-f0-9]{64}$/i.test(existing) ? existing : randomBytes(32).toString("hex"); return { token, hash: sessionHash(token), isNew: !existing }; }
+export function getSessionContext(request: NextRequest) { const existing = request.cookies.get("pdfmaster_session")?.value; const valid = Boolean(existing && /^[a-f0-9]{64}$/i.test(existing)); const token = valid ? existing! : randomBytes(32).toString("hex"); return { token, hash: sessionHash(token), isNew: !valid }; }
 export function attachSessionCookie<T extends NextResponse>(response: T, token: string, request: NextRequest) { const isPublicHttps = request.headers.get("x-forwarded-proto") === "https" || process.env.NODE_ENV === "production"; response.cookies.set("pdfmaster_session", token, { httpOnly: true, sameSite: isPublicHttps ? "none" : "lax", secure: isPublicHttps, maxAge: 60 * 60 * 24 * 30, path: "/" }); return response; }
 
 export async function createProcessingTask(input: { sessionHash: string; toolSlug: string; fileCount: number; inputBytes: number }): Promise<string | null> {

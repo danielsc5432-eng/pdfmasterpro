@@ -55,22 +55,22 @@ function warn(action: string, error: unknown) {
 }
 
 /** Assinatura que concede Premium agora (autorizada e dentro do período). */
-export async function getActiveSubscription(openId: string): Promise<Subscription | null> {
+export async function getActiveSubscription(openId: string, strict = false): Promise<Subscription | null> {
   try {
     const rows = await query<SubscriptionRow>(
       `SELECT ${COLUMNS} FROM subscriptions WHERE open_id = ? AND status = 'authorized' AND (current_period_end IS NULL OR current_period_end > CURRENT_TIMESTAMP) ORDER BY created_at DESC LIMIT 1`,
       [openId],
     );
     return rows[0] ? mapSubscription(rows[0]) : null;
-  } catch (error) { warn("getActiveSubscription", error); return null; }
+  } catch (error) { if (strict) throw error; warn("getActiveSubscription", error); return null; }
 }
 
 /** Última assinatura registrada, seja qual for o status (para exibição no painel). */
-export async function getLatestSubscription(openId: string): Promise<Subscription | null> {
+export async function getLatestSubscription(openId: string, strict = false): Promise<Subscription | null> {
   try {
     const rows = await query<SubscriptionRow>(`SELECT ${COLUMNS} FROM subscriptions WHERE open_id = ? ORDER BY created_at DESC LIMIT 1`, [openId]);
     return rows[0] ? mapSubscription(rows[0]) : null;
-  } catch (error) { warn("getLatestSubscription", error); return null; }
+  } catch (error) { if (strict) throw error; warn("getLatestSubscription", error); return null; }
 }
 
 export async function findSubscriptionByProviderId(provider: string, providerSubscriptionId: string): Promise<Subscription | null> {

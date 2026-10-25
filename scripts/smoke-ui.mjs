@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHmac } from "node:crypto";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -154,6 +155,75 @@ try {
   await evaluate("document.querySelector('.mobile-toggle').click()");
   await waitFor("document.querySelector('.mobile-toggle').getAttribute('aria-expanded') === 'true'");
   console.log("PASS mobile layout on five routes and mobile menu");
+  if (process.env.SMOKE_ACCOUNT === "1") {
+    // Only a disposable local session. API persistence/security are exercised
+    // separately by account.test.ts; CDP supplies fixtures for UI interactions.
+    assert.ok(["localhost", "127.0.0.1"].includes(new URL(base).hostname));
+    const name = "Pessoa de Teste";
+    const account = { user: { name, email: "account@example.invalid", provider: "Google" }, preferences: { displayName: name, preferredTool: "detector-divergencias" }, memberSince: "2026-01-01T12:00:00Z", storageAvailable: true, plan: { name: "Grátis", premium: false, maxFileBytes: 26214400, maxFiles: 5, dailyLimit: 10, until: null }, usage: 2, recent: [{ id: "fixture", tool: "Girar PDF", status: "completed", createdAt: "2026-10-24T12:00:00Z" }] };
+    const now = Math.floor(Date.now() / 1000);
+    const parts = [Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url"), Buffer.from(JSON.stringify({ openId: "google:ui-test", email: account.user.email, name, appId: "isolated-ui-app", iat: now, exp: now + 3600 })).toString("base64url")];
+    parts.push(createHmac("sha256", "isolated-ui-test-only").update(parts.join(".")).digest("base64url"));
+    await cdp("Network.setCookie", { name: "webdev_app_session", value: parts.join("."), url: base, httpOnly: true, sameSite: "Lax" });
+    const fixtureErrors = [];
+    const fixtureHandler = async ({ data }) => {
+      const message = JSON.parse(data);
+      if (message.method !== "Fetch.requestPaused" || message.sessionId !== sessionId) return;
+      try {
+        const { requestId, request } = message.params;
+        const pathname = new URL(request.url).pathname;
+        if (pathname === "/api/account/profile" && request.method === "PATCH") {
+          account.preferences = JSON.parse(request.postData); account.user.name = account.preferences.displayName;
+        }
+        const body = pathname === "/api/auth/me" ? { authenticated: true, user: account.user } : request.method === "PATCH" ? { saved: true, preferences: account.preferences } : account;
+        await cdp("Fetch.fulfillRequest", { requestId, responseCode: 200, responseHeaders: [{ name: "Content-Type", value: "application/json" }, { name: "Cache-Control", value: "no-store" }], body: Buffer.from(JSON.stringify(body)).toString("base64") });
+      } catch (error) { fixtureErrors.push(String(error)); }
+    };
+    socket.addEventListener("message", fixtureHandler);
+    await cdp("Fetch.enable", { patterns: [{ urlPattern: base + "/api/account/profile" }, { urlPattern: base + "/api/auth/me" }] });
+    await cdp("Emulation.clearDeviceMetricsOverride");
+    await navigate("/perfil");
+    await waitFor("!!document.querySelector('#profile-name') && !!document.querySelector('.account-menu-trigger')");
+    assert.equal(await evaluate("document.querySelector('#profile-email').readOnly"), true);
+    await evaluate("document.querySelector('.header-actions .account-menu-trigger').click()");
+    await waitFor("!!document.querySelector('.header-actions .account-menu-panel')");
+    await cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+    await waitFor("!document.querySelector('.header-actions .account-menu-panel')");
+    await evaluate(`(()=>{const input=document.querySelector('#profile-name');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'Nome atualizado');input.dispatchEvent(new Event('input',{bubbles:true}));const select=document.querySelector('#profile-favorite');select.value='girar-pdf';select.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+    await evaluate("document.querySelector('.profile-form button').click()");
+    await waitFor("document.querySelector('.account-success')?.textContent.includes('sucesso')");
+    assert.equal(account.preferences.displayName, "Nome atualizado");
+    assert.equal(account.preferences.preferredTool, "girar-pdf");
+    await evaluate("document.querySelector('.header-actions .account-menu-trigger').click()");
+    await waitFor("document.querySelector('.header-actions .account-menu-identity strong')?.textContent === 'Nome atualizado'");
+    await evaluate("document.querySelector('.header-actions .account-menu-trigger').click()");
+    await evaluate("(()=>{const original=HTMLAnchorElement.prototype.click;window.__profileExport=null;HTMLAnchorElement.prototype.click=function(){if(this.download==='meu-perfil-pdfmasterpro.json'){window.__profileExport=fetch(this.href).then(r=>r.json());HTMLAnchorElement.prototype.click=original;}else original.call(this);};Array.from(document.querySelectorAll('button')).find(b=>b.textContent.includes('Exportar dados')).click();})()");
+    await waitFor("window.__profileExport !== null");
+    assert.equal((await evaluate("window.__profileExport")).profile.name, "Nome atualizado");
+    for (const [label, dark] of [["Claro", false], ["Escuro", true]]) {
+      await evaluate(`Array.from(document.querySelectorAll('.account-theme button')).find(b=>b.textContent==='${label}').click()`);
+      assert.equal(await evaluate("document.documentElement.classList.contains('dark')"), dark);
+    }
+    for (const width of [320, 390, 768, 920, 1440]) {
+      await cdp("Emulation.setDeviceMetricsOverride", { width, height: 1100, deviceScaleFactor: 1, mobile: width < 700 });
+      assert.ok(await evaluate("document.documentElement.scrollWidth <= innerWidth + 1"), "Profile overflow at " + width);
+      assert.ok(await evaluate("document.querySelector('.account-identity>div').getBoundingClientRect().width > 150"), "Profile identity squeezed at " + width);
+      if (process.env.SMOKE_SCREENSHOT_DIR && [390, 1440].includes(width)) {
+        await new Promise(resolve => setTimeout(resolve, 300));
+        const shot = await cdp("Page.captureScreenshot", { format: "png" });
+        await writeFile(path.join(process.env.SMOKE_SCREENSHOT_DIR, `profile-${width}.png`), Buffer.from(shot.data, "base64"));
+      }
+    }
+    await navigate("/painel");
+    await waitFor("!!document.querySelector('.account-workspace') && document.querySelector('.account-summary')?.textContent.includes('Girar PDF')");
+    assert.equal(await evaluate("document.querySelector('.account-summary .button').getAttribute('href')"), "/ferramentas/girar-pdf");
+    await navigate("/perfil"); await waitFor("!!document.querySelector('#profile-name')");
+    await cdp("Fetch.disable"); socket.removeEventListener("message", fixtureHandler);
+    await evaluate("document.querySelector('.account-columns form[action=\"/api/auth/logout\"] button').click()");
+    await waitFor("location.pathname === '/' && !!document.querySelector('.account-guest')");
+    assert.deepEqual(fixtureErrors, []);
+    console.log("PASS authenticated menu, Escape, profile save, header refresh, JSON export, themes, favorite shortcut, five widths and real POST logout (isolated local account)");
+  }
   assert.deepEqual(errors, [], "Uncaught browser exceptions");
   console.log("PASS no uncaught browser exceptions");
   await send("Browser.close").catch(() => undefined);

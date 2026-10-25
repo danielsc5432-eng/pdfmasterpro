@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./account.css";
 
 :root {
   --bg: #f8fafc;

@@ -18,9 +18,9 @@ export function planForSubscription(subscription: Subscription | null | undefine
 }
 
 /** Resolve o plano do usuário consultando o banco (usado no front-end). */
-export async function entitlementsForOpenId(openId: string | null | undefined): Promise<Entitlements> {
+export async function entitlementsForOpenId(openId: string | null | undefined, strict = false): Promise<Entitlements> {
   if (!openId) return FREE;
-  const subscription = await getActiveSubscription(openId);
+  const subscription = await getActiveSubscription(openId, strict);
   if (subscription) return { plan: getPlan(subscription.planId), source: "subscription", subscription };
   return FREE;
 }
@@ -36,7 +36,7 @@ export async function resolveEntitlements(request: NextRequest): Promise<Entitle
 }
 
 /** Última assinatura registrada, para exibir no painel/configurações. */
-export async function latestSubscriptionForOpenId(openId: string | null | undefined): Promise<Subscription | null> {
+export async function latestSubscriptionForOpenId(openId: string | null | undefined, strict = false): Promise<Subscription | null> {
   if (!openId) return null;
-  return getLatestSubscription(openId);
+  return getLatestSubscription(openId, strict);
 }

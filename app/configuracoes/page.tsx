@@ -5,6 +5,8 @@ import { entitlementsForOpenId, latestSubscriptionForOpenId } from "@/lib/billin
 import { formatBRL, formatFileSize } from "@/lib/plans";
 import { CancelSubscriptionButton } from "@/components/manage-subscription";
 
+import { AccountNavigation } from "@/components/account-navigation";
+
 export const metadata = { title: "Configurações", description: "Preferências e assinatura da sua conta PDF Master Pro." };
 
 const statusLabels: Record<string, string> = {
@@ -28,7 +30,7 @@ export default async function SettingsPage() {
   const subscription = await latestSubscriptionForOpenId(user.openId);
   const premium = plan.id !== "free";
   const planLabel = plan.interval === "year" ? "Premium anual" : plan.interval === "month" ? "Premium mensal" : "Grátis";
-  const until = subscription?.currentPeriodEnd ? new Date(subscription.currentPeriodEnd).toLocaleDateString("pt-BR") : null;
+  const until = subscription?.currentPeriodEnd ? new Date(subscription.currentPeriodEnd).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : null;
 
   return (
     <div className="page-shell">
@@ -38,6 +40,7 @@ export default async function SettingsPage() {
         <p>Acompanhe seu plano atual, os limites de processamento e a renovação da assinatura.</p>
       </div>
 
+      <AccountNavigation active="configuracoes" />
       <div className="feature-band" style={{ marginTop: 32 }}>
         <div className="feature-card">
           <h3>Plano atual</h3>
@@ -54,7 +57,9 @@ export default async function SettingsPage() {
         </div>
         <div className="feature-card">
           <h3>Renovação</h3>
-          {premium && subscription && !subscription.cancelledAt
+          {premium && subscription?.provider === "mercadopago-checkout"
+            ? <p>Esta compra é avulsa, sem renovação automática. O acesso segue até {until ?? "o fim do período pago"}.</p>
+            : premium && subscription && !subscription.cancelledAt
             ? <><p>A renovação é automática. Cancele quando quiser{until ? ` — o acesso segue até ${until}` : ""}.</p><CancelSubscriptionButton /></>
             : premium && subscription?.cancelledAt
               ? <p>Renovação cancelada. Aproveite o Premium até {until ?? "o fim do período pago"}.</p>
