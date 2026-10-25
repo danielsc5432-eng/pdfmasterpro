@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { GoogleSignInButton } from "@/components/google-sign-in-button";
+import { LocalAuthForm } from "@/components/local-auth-form";
 import { LockKeyhole, ShieldCheck } from "lucide-react";
 export const metadata: Metadata = { title: "Entrar", description: "Acesse sua conta PDF Master Pro." };
 const authErrors: Record<string, string> = {
@@ -13,5 +14,5 @@ export default async function SignInPage({ searchParams }: { searchParams: Promi
 	const { authError } = await searchParams;
 	const errorMessage = authError ? authErrors[authError] : undefined;
 	const manusConfigured = Boolean(process.env.MANUS_PROJECT_ID && process.env.MANUS_OAUTH_PORTAL_URL && process.env.MANUS_OAUTH_API_URL);
-	return <div className="page-shell"><div className="empty-panel auth-panel"><div className="tool-card-icon" style={{ margin: "0 auto" }}><LockKeyhole size={22} /></div><h1>Entrar no PDF Master Pro</h1><p>Acesse seu painel, histórico e preferências com a mesma conta Google (Gmail) usada no cadastro.</p>{errorMessage && <p role="alert" style={{ color: "#b42318" }}>{errorMessage}</p>}<GoogleSignInButton mode="signin" /><div className="auth-note"><ShieldCheck size={16} /><span>O Google confirma sua identidade; sua senha não é compartilhada com o PDF Master Pro.</span></div>{manusConfigured && <p className="auth-switch"><a href="/api/auth/login">Usar conta Manus</a></p>}<p className="auth-switch">Ainda não tem perfil? <Link href="/criar-conta">Criar conta</Link></p></div></div>;
+	return <div className="page-shell"><div className="empty-panel auth-panel"><div className="tool-card-icon" style={{ margin: "0 auto" }}><LockKeyhole size={22} /></div><h1>Entrar no PDF Master Pro</h1><p>Entre com e-mail e senha ou use a mesma conta Google do cadastro.</p>{errorMessage && <p role="alert" style={{ color: "#b42318" }}>{errorMessage}</p>}<LocalAuthForm mode="signin" /><GoogleSignInButton mode="signin" /><div className="auth-note"><ShieldCheck size={16} /><span>O Google confirma sua identidade; sua senha não é compartilhada com o PDF Master Pro.</span></div>{manusConfigured && <p className="auth-switch"><a href="/api/auth/login">Usar conta Manus</a></p>}<p className="auth-switch">Ainda não tem perfil? <Link href="/criar-conta">Criar conta</Link></p></div></div>;
 }

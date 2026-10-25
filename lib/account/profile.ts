@@ -12,7 +12,7 @@ export const preferencesSchema = z.object({
 }).strict();
 
 export async function accountData(user: AppUser, taskToken?: string) {
-  const fallback = { user: { name: user.name, email: user.email, provider: user.openId.startsWith("google:") ? "Google" : "Manus" }, preferences: { displayName: user.name, preferredTool: "detector-divergencias" }, memberSince: null as string | null, storageAvailable: false, plan: null as null | { name: string; premium: boolean; maxFileBytes: number; maxFiles: number; dailyLimit: number | null; until: string | null }, usage: null as number | null, recent: null as null | { id: string; tool: string; status: string; createdAt: string }[] };
+  const fallback = { user: { name: user.name, email: user.email, provider: user.openId.startsWith("google:") ? "Google" : user.openId.startsWith("local:") ? "E-mail e senha" : "Manus" }, preferences: { displayName: user.name, preferredTool: "detector-divergencias" }, memberSince: null as string | null, storageAvailable: false, plan: null as null | { name: string; premium: boolean; maxFileBytes: number; maxFiles: number; dailyLimit: number | null; until: string | null }, usage: null as number | null, recent: null as null | { id: string; tool: string; status: string; createdAt: string }[] };
   if (!databaseConfigured()) return fallback;
   const details = await query<{ display_name: string; preferred_name: string | null; preferred_tool: string | null; created_at: Date }>("SELECT u.display_name, u.created_at, p.display_name AS preferred_name, p.preferred_tool FROM users u LEFT JOIN user_preferences p ON p.open_id = u.open_id WHERE u.open_id = ? LIMIT 1", [user.openId]).catch(() => null);
   if (!details?.[0]) return fallback;
