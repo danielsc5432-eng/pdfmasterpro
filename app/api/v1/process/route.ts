@@ -13,8 +13,11 @@ import { getCurrentUser, getPublicOrigin } from "@/lib/auth/session";
 import { testingTaskLimit } from "@/lib/billing/testing-quota";
 import { analyzeFiles, analysisOptionsSchema, validateAnalysisFiles } from "@/lib/divergences/analyze";
 import { databaseConfigured } from "@/lib/db";
-import { attachDevice, deviceContext, trustedClientIp, type DeviceContext } from "@/lib/security/abuse";
+import { attachDevice, canonicalEmail, deviceContext, trustedClientIp, type DeviceContext } from "@/lib/security/abuse";
 import { reserveFreeTask } from "@/lib/security/quotas";
+import { reserveBudget } from "@/lib/security/quotas";
+import { SUMMARY_LIMITS, summaryOptionsSchema } from "@/lib/summary/types";
+import { summaryStream, trackSummaryStream } from "@/lib/summary/stream";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -38,6 +41,15 @@ export async function POST(request: NextRequest) {
   const entitlements = await resolveEntitlements(request);
   if (process.env.PROCESSING_WORKER_ONLY === "1" && entitlements.source !== "signed") return errorResponse("Este processador aceita tarefas somente pelo site principal.", 403);
   const limits = entitlements.plan.limits;
+  if (tool === "resumir-pdf-ia") {
+    if (Number(request.headers.get("content-length") || 0) > SUMMARY_LIMITS.uploadBytes + 16384) return errorResponse("O resumo aceita um PDF de até 4 MB nesta hospedagem.", 413);
+    if (entitlements.source !== "signed" && !getCurrentUser(request)) return errorResponse("Entre na sua conta para resumir PDFs com IA.", 401);
+    if (entitlements.source !== "signed") {
+      try {
+        if (!databaseConfigured() || !await reserveBudget("summary-account", canonicalEmail(getCurrentUser(request)!.email), entitlements.plan.id === "free" ? 3 : 10)) return errorResponse("A cota de resumos desta conta foi atingida ou está indisponível. Aguarde a renovação em 24 horas.", 429);
+      } catch { return errorResponse("A verificação da cota de resumos está indisponível.", 503); }
+    }
+  }
 
   if (toolDefinition?.premium && !limits.premiumTools) return errorResponse(`A ferramenta "${toolDefinition.name}" é exclusiva do plano Premium. Assine para liberar todas as ferramentas.`, 402);
 
@@ -76,6 +88,7 @@ export async function POST(request: NextRequest) {
     // pelo próprio worker, que vê os arquivos já decodificados.
     const declared = Number(request.headers.get("content-length") || 0);
     const taskId = await createProcessingTask({ sessionHash: session.hash, toolSlug: tool, fileCount: 1, inputBytes: Number.isFinite(declared) && declared > 0 ? declared : 0 });
+    const proxyAbort = new AbortController();
     try {
       const target = `${workerUrl.replace(/\/$/, "")}/api/v1/process${request.nextUrl.search}`;
       const proxyHeaders = new Headers(request.headers);
@@ -88,7 +101,7 @@ export async function POST(request: NextRequest) {
         method: "POST",
         headers: proxyHeaders,
         body: request.body,
-        signal: request.signal,
+        signal: AbortSignal.any([request.signal, proxyAbort.signal]),
         duplex: "half",
       } as RequestInit);
       const headers = new Headers(response.headers);
@@ -98,6 +111,10 @@ export async function POST(request: NextRequest) {
       headers.delete("content-length");
       headers.delete("content-encoding");
       const outputType = (headers.get("content-type") || "application/octet-stream").slice(0, 100);
+      if (tool === "resumir-pdf-ia" && response.ok && response.body && outputType.startsWith("text/event-stream")) {
+        const body = trackSummaryStream(response.body, () => markProcessingTaskCompleted(taskId, 0, "application/json"), () => markProcessingTaskFailed(taskId, "summary_incomplete"), () => proxyAbort.abort());
+        return finish(new NextResponse(body, { status: response.status, headers }), request, session);
+      }
       await (response.ok ? markProcessingTaskCompleted(taskId, Number.isFinite(outputBytes) ? outputBytes : 0, outputType) : markProcessingTaskFailed(taskId, `worker_${response.status}`)).catch(() => undefined);
       return finish(new NextResponse(response.body, { status: response.status, headers }), request, session);
     } catch (error) {
@@ -116,6 +133,18 @@ export async function POST(request: NextRequest) {
   const fileLimits = { maxFileBytes: limits.maxFileBytes, planLabel: planLabel(entitlements.plan) };
   const files: { name: string; bytes: Uint8Array; kind: FileKind }[] = [];
   for (const entry of entries) { const bytes = new Uint8Array(await entry.arrayBuffer()); const result = validateFile(entry.name, bytes, allowed, entry.type, fileLimits); if (!result.ok) return errorResponse(result.message, 422); files.push({ name: entry.name, bytes, kind: result.kind }); }
+  if (tool === "resumir-pdf-ia") {
+    if (files[0].bytes.length > SUMMARY_LIMITS.uploadBytes) return finish(errorResponse("O resumo aceita um PDF de até 4 MB.", 413), request, session);
+    let options;
+    try { options = summaryOptionsSchema.parse(JSON.parse(String(form.get("options") || "{}"))); }
+    catch { return finish(errorResponse("Selecione o tamanho, um modo válido e autorize o envio do texto ao provedor de IA.", 422), request, session); }
+    const taskId = await createProcessingTask({ sessionHash: session.hash, toolSlug: tool, fileCount: 1, inputBytes: files[0].bytes.length });
+    try {
+      const response = summaryStream(files[0].bytes, files[0].name, options, request.signal);
+      const tracked = trackSummaryStream(response.body!, () => markProcessingTaskCompleted(taskId, 0, "application/json"), () => markProcessingTaskFailed(taskId, "summary_failed"), () => {});
+      return finish(new NextResponse(tracked, { headers: response.headers }), request, session);
+    } catch { await markProcessingTaskFailed(taskId, "summary_unavailable"); return finish(errorResponse("Confira as opções, o consentimento e se o modo de IA está configurado no processador.", 503), request, session); }
+  }
   const taskId = await createProcessingTask({ sessionHash: session.hash, toolSlug: tool, fileCount: files.length, inputBytes: files.reduce((total, file) => total + file.bytes.byteLength, 0) });
   const invalidTask = async (message: string, status = 400) => { await markProcessingTaskFailed(taskId, "invalid_options").catch(() => undefined); return finish(errorResponse(message, status), request, session); };
   try {

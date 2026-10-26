@@ -22,7 +22,9 @@ for (const route of ["/api/billing/checkout", "/api/billing/checkout-once", "/ap
 // Run only against an isolated server without a webhook secret, or with an invalid signature.
 await check("/api/billing/webhook", 401, { method: "POST", headers: { "x-signature": "ts=123,v1=invalid" } });
 for (const slug of ["ocr-pdf", "redigir-pdf"]) await check("/api/v1/process?tool=" + slug, 402, { method: "POST" });
-await check("/api/v1/process?tool=girar-pdf", 400, { method: "POST", body: new FormData() });
+await check("/api/v1/process?tool=girar-pdf", process.env.SMOKE_NO_DATABASE === "1" ? 503 : 400, { method: "POST", body: new FormData() });
+await check("/api/summary/capabilities", 200);
+await check("/api/v1/process?tool=resumir-pdf-ia", 401, { method: "POST", body: new FormData() });
 await check("/api/v1/process?tool=inexistente", 404, { method: "POST" });
 const search = await check("/ferramentas?busca=termo-sem-resultado-12345", 200);
 assert.match(await search.text(), /Nenhuma ferramenta encontrada/);

@@ -53,7 +53,7 @@ try {
     ["Converter", ["imagens-para-pdf", "pdf-para-imagens", "pdf-para-word", "word-para-pdf"]],
     ["Otimizar", ["comprimir-pdf"]], ["Editar", ["marca-dagua", "numerar-paginas", "editar-metadados"]],
     ["OCR", ["ocr-pdf", "extrair-texto"]], ["Segurança", ["assinar-pdf", "proteger-pdf", "redigir-pdf"]],
-    ["Analisar", ["detector-divergencias"]], ["Automatizar", ["clonemaster-ai"]],
+    ["Analisar", ["resumir-pdf-ia", "detector-divergencias"]], ["Automatizar", ["clonemaster-ai"]],
   ];
   for (const [category, slugs] of categoryGroups) {
     await evaluate(`Array.from(document.querySelectorAll('.category-pill')).find(a=>a.textContent===${JSON.stringify(category)}).click()`);
@@ -62,11 +62,11 @@ try {
   }
   await evaluate("history.back()");
   await waitFor("document.querySelector('.category-pill[aria-current=page]')?.textContent === 'Analisar'");
-  assert.ok(await evaluate("document.querySelector('.tool-card').getAttribute('href').endsWith('detector-divergencias')"));
+  assert.ok(await evaluate("document.querySelector('.tool-card').getAttribute('href').endsWith('resumir-pdf-ia')"));
   await evaluate("history.forward()");
   await waitFor("document.querySelector('.category-pill[aria-current=page]')?.textContent === 'Automatizar'");
   await evaluate("Array.from(document.querySelectorAll('.category-pill')).find(a=>a.textContent==='Todos').click()");
-  await waitFor("document.querySelectorAll('.tool-card').length === 19");
+  await waitFor("document.querySelectorAll('.tool-card').length === 20");
   await navigate("/ferramentas?busca=pdf&categoria=Converter");
   await evaluate("Array.from(document.querySelectorAll('.category-pill')).find(a=>a.textContent==='Otimizar').click()");
   await waitFor("document.querySelectorAll('.tool-card').length === 1 && document.querySelector('.tool-card').getAttribute('href').endsWith('comprimir-pdf')");
@@ -74,7 +74,7 @@ try {
   await navigate("/ferramentas?busca=sem-resultado-123&categoria=OCR");
   await waitFor("!!document.querySelector('.empty-panel .button')");
   await evaluate("document.querySelector('.empty-panel .button').click()");
-  await waitFor("document.querySelectorAll('.tool-card').length === 19 && location.search === ''");
+  await waitFor("document.querySelectorAll('.tool-card').length === 20 && location.search === ''");
   await navigate("/ferramentas?categoria=inexistente");
   assert.equal(await evaluate("document.querySelector('.category-pill[aria-current=page]').textContent"), "Todos");
   console.log("PASS all nine category filters, active state, combined search, empty-state reset and unknown category fallback");
