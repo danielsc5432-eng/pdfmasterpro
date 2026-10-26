@@ -121,6 +121,14 @@ Após o usuário salvar sua chave Groq, a conexão real foi validada com `openai
 
 `SUMMARY_FALLBACK_ENABLED=true` foi salvo no arquivo local ignorado. Cloudflare permanece principal e Groq é reserva do modo padrão; o modo avançado continua sem configuração. Não houve publicação nem alteração de plano. As credenciais ainda precisam ser instaladas no processador de produção antes da ativação pública, após autorização do usuário. Referência de cotas: https://console.groq.com/docs/rate-limits.
 
+### Publicação autorizada e verificação de produção
+
+Após a autorização “faça isso”, as variáveis necessárias foram instaladas individualmente no Render, sem substituir as demais configurações. Não foram gravadas chaves no Git. Commit publicado: `9691b7300e3e0688638fbf6905cb61f539be1f93`. A suíte completa voltou a passar: 202 testes, zero falhas; o build local e o build Vercel também passaram.
+
+Vercel: `dpl_4pSbrFTiKNVDdiL3eGbgmfALziy2`, READY, domínio `https://www.pdfmasterpro.com.br`. Render: `dep-dbfbcr0473hc739t3ve0`, mesmo commit. A página `/ferramentas/resumir-pdf-ia` e o health retornaram HTTP 200. A consulta pública de capacidades confirmou `available=true`, Cloudflare principal, Groq reserva, OCR disponível e modo avançado desabilitado. POST anônimo ao resumo retornou 401; consulta direta não assinada ao worker retornou 403.
+
+A revisão automática rejeitou uma tentativa de baixar todas as variáveis da Vercel para um teste autenticado, por ser acesso amplo a segredos desnecessário para verificar o deploy. A ação não foi executada nem contornada. A verificação de produção usou somente endpoints públicos e suas proteções; não se declara teste completo com usuário autenticado ou PDF processado através da produção. Os testes reais de geração nos dois provedores e da troca automática foram os testes sintéticos locais documentados acima.
+
 1. Criar conta Groq Free, revisar tratamento de dados/modelos e salvar chave somente no arquivo local ignorado ou no servidor. Alternativamente, informar servidor Ollama próprio com HTTPS e modelo adequado.
 2. Escolher modelos disponíveis, configurar ambiente do processador e comparar resumos reais em PDFs de teste sem dados confidenciais. Conferir capacidade do modo avançado antes de anunciá-lo.
 3. Confirmar cotas reais; documentos extensos podem exigir a fila assíncrona proposta, mesmo abaixo do limite de upload.

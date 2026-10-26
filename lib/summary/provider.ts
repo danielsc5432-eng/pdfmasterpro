@@ -37,19 +37,29 @@ export async function generateSummaryPoints(sources: SummarySource[], options: S
   const key = config.kind === "groq" ? process.env.SUMMARY_GROQ_API_KEY : config.kind === "ollama-cloud" ? process.env.SUMMARY_OLLAMA_CLOUD_KEY : config.kind === "cloudflare" ? process.env.SUMMARY_CF_API_TOKEN : process.env.SUMMARY_AI_KEY;
   // Cloud does not currently support Ollama's structured `format`; enforce schema locally instead.
   const payload = config.kind === "groq" ? { model, stream: false, temperature: 0, max_completion_tokens: 2200, response_format: { type: "json_object" }, messages } : config.kind === "cloudflare" ? { messages, stream: false, temperature: 0, max_tokens: 2200 } : config.kind === "ollama-cloud" ? { model, stream: false, options: { temperature: 0, num_predict: 2200 }, messages } : { model, stream: false, format: shape, options: { temperature: 0, num_predict: 2200, num_ctx: 8192 }, messages };
+  const requestSignal = AbortSignal.any([signal, AbortSignal.timeout(22000)]);
+  const providerFailure = (error: unknown): never => {
+    signal.throwIfAborted();
+    if (error instanceof TypeError || (error instanceof Error && error.name === "TimeoutError") || requestSignal.aborted) throw new SummaryTransientError("O provedor está temporariamente indisponível.");
+    throw error;
+  };
   let response: Response;
-  try { response = await transport(target, { method: "POST", redirect: "error", cache: "no-store", signal: AbortSignal.any([signal, AbortSignal.timeout(22000)]), headers: { "Content-Type": "application/json", ...(key ? { Authorization: `Bearer ${key}` } : {}) }, body: JSON.stringify(payload) }); } catch (error) { signal.throwIfAborted(); if (error instanceof TypeError || (error instanceof Error && error.name === "TimeoutError")) throw new SummaryTransientError("O provedor está temporariamente indisponível."); throw error; }
-  if ([408, 429, 500, 502, 503, 504].includes(response.status)) { await response.body?.cancel(); throw new SummaryTransientError("O provedor está indisponível ou atingiu seu limite."); }
+  try { response = await transport(target, { method: "POST", redirect: "error", cache: "no-store", signal: requestSignal, headers: { "Content-Type": "application/json", ...(key ? { Authorization: `Bearer ${key}` } : {}) }, body: JSON.stringify(payload) }); } catch (error) { return providerFailure(error); }
+  if ([408, 429, 500, 502, 503, 504].includes(response.status)) { await response.body?.cancel().catch(() => {}); throw new SummaryTransientError("O provedor está indisponível ou atingiu seu limite."); }
   if (!response.ok || !response.body) throw Error(response.status === 429 ? "O provedor de IA atingiu seu limite. Aguarde antes de tentar novamente." : "O provedor de IA não conseguiu atender esta solicitação.");
   const reader = response.body.getReader(); let data = Buffer.alloc(0);
-  try { while (true) { const part = await reader.read(); if (part.done) break; if (data.length + part.value.length > 128 * 1024) throw Error("A resposta da IA excedeu o limite seguro."); data = Buffer.concat([data, part.value]); } }
+  try { while (true) { requestSignal.throwIfAborted(); const part = await reader.read(); if (part.done) break; if (data.length + part.value.length > 128 * 1024) throw Error("A resposta da IA excedeu o limite seguro."); data = Buffer.concat([data, part.value]); } }
+  catch (error) { return providerFailure(error); }
   finally { await reader.cancel().catch(() => {}); }
   let result;
   try { result = JSON.parse(data.toString("utf8")); } catch { throw Error("O provedor retornou uma resposta inválida."); }
+  if (!result || typeof result !== "object" || Array.isArray(result)) throw Error("O provedor retornou uma resposta inválida.");
   if (config.kind === "cloudflare") {
     const content: unknown = result.result?.response;
     const structured = content !== null && typeof content === "object" && !Array.isArray(content);
-    if (result.success !== true || result.result?.tool_calls?.length || result.result?.usage?.completion_tokens >= 2200 || (typeof content !== "string" && !structured)) throw Error("A resposta do Workers AI foi interrompida ou não pôde ser validada.");
+    const choices = result.result?.choices;
+    const interrupted = choices !== undefined && (!Array.isArray(choices) || choices.length !== 1 || choices[0]?.finish_reason !== "stop" || choices[0]?.message?.tool_calls?.length);
+    if (result.success !== true || interrupted || result.result?.tool_calls?.length || result.result?.usage?.completion_tokens >= 2200 || (typeof content !== "string" && !structured)) throw Error("A resposta do Workers AI foi interrompida ou não pôde ser validada.");
     // Some Workers AI models return parsed JSON. The engine still applies the same strict schema and evidence checks.
     return typeof content === "string" ? content : JSON.stringify(content);
   }

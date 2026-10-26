@@ -9,7 +9,9 @@ const currencyTokens = (text: string) => text.match(/US\$|R\$|\b(?:USD|BRL|EUR|G
 const pointsSchema = z.object({ points: z.array(z.object({ text: z.string().trim().min(8).max(1200), evidence: z.array(z.object({ sourceId: z.string().max(40), quote: z.string().trim().min(10).max(650) }).strict()).min(1).max(3) }).strict()).max(10) }).strict();
 export function validateSummaryPoints(content: string, sources: SummarySource[]): SummaryPoint[] {
   let parsed;
-  try { parsed = pointsSchema.parse(JSON.parse(content)); } catch { throw Error("A IA retornou uma estrutura inválida. Nenhum resumo foi entregue."); }
+  // Accept a single whole-response JSON code fence, never extract JSON from surrounding prose.
+  const fenced = content.trim().match(/^```(?:json)?[ \t]*\r?\n([\s\S]*?)\r?\n```$/i);
+  try { parsed = pointsSchema.parse(JSON.parse(fenced ? fenced[1] : content)); } catch { throw Error("A IA retornou uma estrutura inválida. Nenhum resumo foi entregue."); }
   const byId = new Map(sources.map(source => [source.id, source]));
   for (const point of parsed.points) {
     if (/https?:\/\/|<\/?[a-z]|\[\s*(?:p[áa]g|p\.)/i.test(point.text)) throw Error("O resumo contém conteúdo ou referências não permitidos.");
