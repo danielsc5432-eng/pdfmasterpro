@@ -24,6 +24,8 @@ await check("/api/billing/webhook", 401, { method: "POST", headers: { "x-signatu
 for (const slug of ["ocr-pdf", "redigir-pdf"]) await check("/api/v1/process?tool=" + slug, 402, { method: "POST" });
 await check("/api/v1/process?tool=girar-pdf", process.env.SMOKE_NO_DATABASE === "1" ? 503 : 400, { method: "POST", body: new FormData() });
 await check("/api/summary/capabilities", 200);
+await check("/api/clonemaster/quota", 405);
+await check("/api/clonemaster/quota", 403, { method: "POST", headers: { origin: "https://invalid.example" } });
 await check("/api/v1/process?tool=resumir-pdf-ia", 401, { method: "POST", body: new FormData() });
 await check("/api/v1/process?tool=inexistente", 404, { method: "POST" });
 const search = await check("/ferramentas?busca=termo-sem-resultado-12345", 200);

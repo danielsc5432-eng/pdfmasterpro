@@ -48,6 +48,15 @@ try {
   const model = path.join(fixtures, "configuracao.txt");
   const source = process.env.CLONEMASTER_XLSX_FIXTURE || path.join(fixtures, "funcionarios.xlsx");
   const posts = [];
+  let quotaDenied = true;
+  await cdp("Fetch.enable", { patterns: [{ urlPattern: "*/api/clonemaster/quota", requestStage: "Request" }] });
+  socket.addEventListener("message", ({ data }) => {
+    const message = JSON.parse(data);
+    if (message.method !== "Fetch.requestPaused") return;
+    const request = message.params.request;
+    assert.equal(request.method, "POST"); assert.ok(!request.postData, "Quota reservation must not contain document bytes");
+    cdp("Fetch.fulfillRequest", { requestId: message.params.requestId, responseCode: quotaDenied ? 429 : 200, responseHeaders: [{ name: "Content-Type", value: "application/json" }], body: Buffer.from(JSON.stringify(quotaDenied ? { error: "A cota de 10 tarefas gratuitas foi atingida." } : { authorized: true, limit: 10 })).toString("base64") }).catch(error => errors.push(error.message));
+  });
   socket.addEventListener("message", ({ data }) => { const message = JSON.parse(data); if (message.method === "Network.requestWillBeSent" && message.params.request.method === "POST") posts.push(new URL(message.params.request.url).pathname); });
   await cdp("Network.enable");
   await navigate("/ferramentas/clonemaster-ai");
@@ -69,6 +78,11 @@ try {
   await waitFor("document.querySelector('.clone-changes').textContent.includes('4500')");
   assert.equal(await evaluate("document.querySelector('#clone-generate').disabled"), true);
   await evaluate("document.querySelector('#clone-confirm').click()");
+  await evaluate("document.querySelector('#clone-generate').click()");
+  await waitFor("document.querySelector('.clone-error')?.textContent.includes('cota de 10')");
+  assert.equal(await evaluate("!!document.querySelector('#clone-zip')"), false);
+  assert.equal(await evaluate("document.querySelectorAll('.clone-results a[download]').length"), 0);
+  quotaDenied = false;
   await evaluate("document.querySelector('#clone-generate').click()");
   await waitFor("!!document.querySelector('#clone-zip')", 30000);
   const original = await readFile(model, "utf8");
@@ -113,8 +127,8 @@ try {
   await evaluate("document.querySelector('.clone-progress button').click()");
   await waitFor("!document.querySelector('.clone-progress') && document.querySelector('.clone-error')?.textContent.includes('cancelada')");
   assert.equal(await evaluate("!!document.querySelector('#clone-zip')"), false);
-  console.log("PASS real worker termination cancels a 500-record batch and removes its results");
-  assert.deepEqual(posts, [], "Document contents must never be uploaded by CloneMaster");
+  console.log("PASS cancellation of a 500-record workflow removes its results");
+  assert.ok(posts.length >= 2); assert.ok(posts.every(route => route === "/api/clonemaster/quota"), "Only quota reservations are sent; document contents must never be uploaded by CloneMaster");
   assert.deepEqual(errors, [], "Uncaught browser errors");
   console.log("PASS no document upload requests, no uncaught exceptions, five responsive widths and local session cleanup");
   await send("Browser.close").catch(() => undefined);

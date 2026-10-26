@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { buildPlan, columnsFor, NaturalLanguageExtractionPlanner, previewRecord } from "@/lib/clonemaster/engine";
 import { LIMITS, type BatchResult, type CloneConfig, type Encoding, type Plan, type Preview, type Source, type Template, type WorkerRequest } from "@/lib/clonemaster/types";
+import { FREE_MAX_TASKS_PER_DAY } from "@/lib/plans";
 import "./workspace.css";
 
 const EXAMPLE = "Extraia apenas os valores da coluna Salário da planilha e substitua o campo salario no TXT. Gere um arquivo por funcionário, sem modificar as outras configurações.";
@@ -36,10 +37,12 @@ export function CloneMasterWorkspace() {
   const modelInput = useRef<HTMLInputElement>(null), sourceInput = useRef<HTMLInputElement>(null);
   const worker = useRef<Worker | null>(null), nextId = useRef(0), urls = useRef<string[]>([]), alive = useRef(true), operation = useRef(0);
   const pending = useRef(new Map<number, { resolve: (result: unknown) => void; reject: (error: Error) => void }>());
+  const quotaAbort = useRef<AbortController | null>(null), generationLock = useRef(false);
 
   function revoke() { urls.current.forEach(url => URL.revokeObjectURL(url)); urls.current = []; }
   function invalidate() { setReviews(null); setConfirmed(false); setResult(null); setDownloads([]); setZipUrl(""); revoke(); }
   function stopWorker(message = "Operação cancelada. Nenhum resultado deste lote foi disponibilizado.") {
+    quotaAbort.current?.abort(); quotaAbort.current = null; generationLock.current = false;
     worker.current?.terminate(); worker.current = null;
     for (const request of pending.current.values()) request.reject(Error(message)); pending.current.clear();
   }
@@ -133,10 +136,17 @@ export function CloneMasterWorkspace() {
     setConfirmed(false);
   }
   async function generate() {
-    if (!reviews || !confirmed || busy) return;
+    if (!reviews || !confirmed || busy || generationLock.current) return;
+    generationLock.current = true;
     setBusy(true); setError(""); setProgress({ done: 0, total: reviews.reduce((sum, review) => sum + review.plan.records.length, 0) });
     const currentOperation = ++operation.current; revoke(); setDownloads([]); setZipUrl(""); setResult(null);
     try {
+      const controller = new AbortController(); quotaAbort.current = controller;
+      const response = await fetch("/api/clonemaster/quota", { method: "POST", credentials: "same-origin", cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]) });
+      const authorization = await response.json();
+      if (!response.ok || authorization.authorized !== true) throw Error(authorization.error || "Não foi possível autorizar o lote. Tente novamente.");
+      if (currentOperation !== operation.current || !alive.current) return;
+      quotaAbort.current = null;
       const generated = await request<BatchResult>({ command: "generate", templates, sources: dataSources, configs: reviews.map(review => review.plan.config) });
       if (currentOperation !== operation.current || !alive.current) return;
       if (generated.cancelled) throw Error("Lote cancelado.");
@@ -145,7 +155,7 @@ export function CloneMasterWorkspace() {
       if (generated.zip) setZipUrl(create(generated.zip, "application/zip"));
       setDownloads(nextDownloads); setResult(generated);
     } catch (cause) { if (currentOperation === operation.current && alive.current) setError(cause instanceof Error ? cause.message : "Falha ao gerar o lote."); }
-    finally { if (currentOperation === operation.current && alive.current) setBusy(false); }
+    finally { if (currentOperation === operation.current && alive.current) { generationLock.current = false; quotaAbort.current = null; setBusy(false); } }
   }
   function cancel() { operation.current++; stopWorker(); setModels(previous => previous.filter(item => item.template || item.error)); setSources(previous => previous.filter(item => item.source || item.error)); invalidate(); setBusy(false); setError("Operação cancelada. Os resultados deste lote foram descartados."); }
   function clear() { operation.current++; stopWorker(); invalidate(); setModels([]); setSources([]); setConfigs({}); setActiveId(""); setInterpretation(""); setError(""); setBusy(false); }
@@ -153,6 +163,7 @@ export function CloneMasterWorkspace() {
   return <section className="clone-workspace workspace" aria-labelledby="clone-title">
     <div className="workspace-header"><div><h2 id="clone-title">CloneMaster AI</h2><p>Modelos TXT, INI e CFG + fontes XLSX. Somente os campos confirmados serão alterados.</p></div><span className="tool-status status-ready">Processamento local</span></div>
     <p className="clone-notice">Os arquivos ficam neste navegador. Não há envio para APIs, execução de macros ou cobrança de IA. Interpretação local por regras, sem modelo generativo; revise sempre o plano. Limites: 5 modelos, 5 fontes, 20 MB de entrada e 500 resultados por lote.</p>
+    <p className="clone-notice" id="clone-quota">Plano gratuito: até {FREE_MAX_TASKS_PER_DAY} tarefas por janela de 24 horas, compartilhadas com as outras ferramentas. Cada geração de lote consome uma tarefa, mesmo se cancelada depois da autorização. Prévia e downloads do lote pronto não consomem novas tarefas. A cota é validada online, sem enviar o conteúdo dos arquivos. Premium sem cota diária de tarefas.</p>
     <div className="clone-upload-grid">{(["models", "sources"] as const).map(area => <section className="clone-card" key={area}>
       <h3>{area === "models" ? "A · Arquivos modelo" : "B · Fontes de informações"}</h3>
       {area === "models" && <label className="clone-label">Codificação dos próximos modelos<select value={encoding} disabled={busy} onChange={event => setEncoding(event.target.value as Encoding | "auto")}><option value="auto">Automática (UTF-8 / UTF-16 com BOM)</option><option value="windows-1252">Windows-1252</option><option value="utf-16le">UTF-16 LE sem BOM</option><option value="utf-16be">UTF-16 BE sem BOM</option></select></label>}
