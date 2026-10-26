@@ -1,6 +1,9 @@
+import { LEGAL_SUITE } from "@/lib/legal/suite-config";
 export type ToolStatus = "ready" | "needs-config" | "coming-soon";
 export type ToolDefinition = { slug: string; name: string; description: string; category: string; icon: string; formats: string[]; status: ToolStatus; popular?: boolean; premium?: boolean; features: string[] };
 export const tools: ToolDefinition[] = [
+  ...LEGAL_SUITE.map(tool=>({slug:tool.slug,name:tool.name,description:tool.description,category:"Jurídico",icon:"FileText",formats:["PDF"],status:"ready" as const,features:[...tool.features]})),
+  { slug: "pdf-timemachine-juridico", name: "PDF TimeMachine Jurídico", description: "Compare versões de documentos jurídicos com evidências, visualização lado a lado e relatórios locais.", category: "Jurídico", icon: "FileText", formats: ["PDF"], status: "ready", features: ["De 2 a 4 versões", "Valores, percentuais, datas e cláusulas", "Processamento local e OCR opcional", "Relatórios PDF, DOCX, TXT e CSV"] },
   { slug: "resumir-pdf-ia", name: "Resumir PDF com IA", description: "Resuma um PDF com inteligência artificial, citações por página e exportação editável.", category: "Analisar", icon: "FileText", formats: ["PDF → resumo PDF / DOCX / TXT"], status: "ready", features: ["Resumo curto, médio ou longo", "Citações conferidas no texto extraído", "OCR quando disponível no processador", "Provedor gratuito configurável, sem resultados simulados"] },
   { slug: "clonemaster-ai", name: "CloneMaster AI", description: "Preencha cópias de modelos TXT, INI ou CFG usando colunas de uma planilha XLSX, preservando os demais bytes.", category: "Automatizar", icon: "Copy", formats: ["Modelos TXT / INI / CFG", "Fontes XLSX"], status: "ready", features: ["Mapeamento de campos com confirmação", "Um arquivo por registro e download ZIP", "Prévia antes/depois", "Processamento local no navegador"] },
   { slug: "detector-divergencias", name: "Detector de divergências", description: "Compare contratos e notas fiscais em PDF. Confira valores, datas e outros dados com evidências e revisão humana.", category: "Analisar", icon: "ShieldCheck", formats: ["PDF"], status: "ready", popular: true, features: ["Comparar de 2 a 5 PDFs", "Evidências com página e trecho", "Revisão semântica opcional", "Relatório PDF"] },
@@ -23,4 +26,4 @@ export const tools: ToolDefinition[] = [
   { slug: "redigir-pdf", name: "Redigir PDF", description: "Queime uma área selecionada na imagem da página, removendo o conteúdo subjacente daquela área.", category: "Segurança", icon: "ShieldCheck", formats: ["PDF"], status: "ready", premium: true, features: ["Coordenadas em pontos", "Página específica ou todas", "Rasterização para impedir extração do trecho"] },
 ];
 export function getTool(slug: string) { return tools.find((tool) => tool.slug === slug); }
-export const categories = ["Todos", "Organizar", "Converter", "Otimizar", "Editar", "OCR", "Segurança", "Analisar", "Automatizar"];
+export const categories = ["Todos", "Organizar", "Converter", "Otimizar", "Editar", "OCR", "Segurança", "Analisar", "Automatizar", "Jurídico"];

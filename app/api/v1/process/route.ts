@@ -6,6 +6,7 @@ import { addWatermark, editMetadata, extractPdfText, numberPages, ocrImage, ocrP
 import { type FileKind, validateFile, safeFilename } from "@/lib/processing/validate";
 import { attachSessionCookie, countRecentTasks, createProcessingTask, getSessionContext, markProcessingTaskCompleted, markProcessingTaskFailed } from "@/lib/db/tasks";
 import { getTool } from "@/lib/tools/catalog";
+import { isLocalLegalSlug } from "@/lib/legal/suite-config";
 import { resolveEntitlements } from "@/lib/billing/entitlements";
 import { PLAN_HEADER, PLAN_SIGNATURE_HEADER, signPlanHeaders } from "@/lib/billing/plan-token";
 import type { Plan } from "@/lib/plans";
@@ -38,6 +39,7 @@ export async function POST(request: NextRequest) {
   const toolDefinition = getTool(tool);
   if (!toolDefinition) return errorResponse("Ferramenta desconhecida.", 404);
   if (tool === "clonemaster-ai") return errorResponse("O CloneMaster processa os arquivos localmente no navegador. Abra a ferramenta para configurar os modelos e as fontes.", 400);
+  if (isLocalLegalSlug(tool)) return errorResponse("As ferramentas jurídicas processam os PDFs localmente no navegador. Abra a ferramenta para analisar sem enviar os documentos.", 400);
   const entitlements = await resolveEntitlements(request);
   if (process.env.PROCESSING_WORKER_ONLY === "1" && entitlements.source !== "signed") return errorResponse("Este processador aceita tarefas somente pelo site principal.", 403);
   const limits = entitlements.plan.limits;

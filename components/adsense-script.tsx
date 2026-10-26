@@ -3,12 +3,15 @@
 import Script from "next/script";
 import { useEffect, useState } from "react";
 import { ADSENSE_CLIENT_ID } from "@/lib/adsense";
+import { usePathname } from "next/navigation";
+import { isLocalLegalSlug } from "@/lib/legal/suite-config";
 
 /**
  * O anúncio só é carregado no plano grátis: assinantes Premium navegam sem anúncios.
  * A verificação do plano acontece no navegador para manter as páginas estáticas.
  */
 export function AdsenseScript() {
+  const pathname = usePathname();
   const [enabled, setEnabled] = useState(true);
 
   useEffect(() => {
@@ -24,7 +27,7 @@ export function AdsenseScript() {
     };
   }, []);
 
-  if (!enabled) return null;
+  if (!enabled || pathname.startsWith("/juridico") || isLocalLegalSlug(pathname.replace(/^\/ferramentas\//,""))) return null;
 
   return (
     <Script

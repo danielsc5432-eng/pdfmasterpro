@@ -53,7 +53,7 @@ try {
     ["Converter", ["imagens-para-pdf", "pdf-para-imagens", "pdf-para-word", "word-para-pdf"]],
     ["Otimizar", ["comprimir-pdf"]], ["Editar", ["marca-dagua", "numerar-paginas", "editar-metadados"]],
     ["OCR", ["ocr-pdf", "extrair-texto"]], ["Segurança", ["assinar-pdf", "proteger-pdf", "redigir-pdf"]],
-    ["Analisar", ["resumir-pdf-ia", "detector-divergencias"]], ["Automatizar", ["clonemaster-ai"]],
+    ["Analisar", ["resumir-pdf-ia", "detector-divergencias"]], ["Automatizar", ["clonemaster-ai"]], ["Jurídico", ["pdf-timemachine-juridico", "contractcheck-ai", "processo-timeline", "juris-organize", "prova-compare", "prazo-extractor", "peticao-review"]],
   ];
   for (const [category, slugs] of categoryGroups) {
     await evaluate(`Array.from(document.querySelectorAll('.category-pill')).find(a=>a.textContent===${JSON.stringify(category)}).click()`);
@@ -61,12 +61,12 @@ try {
     assert.deepEqual((await evaluate("Array.from(document.querySelectorAll('.tool-card')).map(a=>a.getAttribute('href').split('/').pop())")).sort(), [...slugs].sort());
   }
   await evaluate("history.back()");
-  await waitFor("document.querySelector('.category-pill[aria-current=page]')?.textContent === 'Analisar'");
-  assert.ok(await evaluate("document.querySelector('.tool-card').getAttribute('href').endsWith('resumir-pdf-ia')"));
-  await evaluate("history.forward()");
   await waitFor("document.querySelector('.category-pill[aria-current=page]')?.textContent === 'Automatizar'");
+  assert.ok(await evaluate("document.querySelector('.tool-card').getAttribute('href').endsWith('clonemaster-ai')"));
+  await evaluate("history.forward()");
+  await waitFor("document.querySelector('.category-pill[aria-current=page]')?.textContent === 'Jurídico'");
   await evaluate("Array.from(document.querySelectorAll('.category-pill')).find(a=>a.textContent==='Todos').click()");
-  await waitFor("document.querySelectorAll('.tool-card').length === 20");
+  await waitFor("document.querySelectorAll('.tool-card').length === 27");
   await navigate("/ferramentas?busca=pdf&categoria=Converter");
   await evaluate("Array.from(document.querySelectorAll('.category-pill')).find(a=>a.textContent==='Otimizar').click()");
   await waitFor("document.querySelectorAll('.tool-card').length === 1 && document.querySelector('.tool-card').getAttribute('href').endsWith('comprimir-pdf')");
@@ -74,10 +74,12 @@ try {
   await navigate("/ferramentas?busca=sem-resultado-123&categoria=OCR");
   await waitFor("!!document.querySelector('.empty-panel .button')");
   await evaluate("document.querySelector('.empty-panel .button').click()");
-  await waitFor("document.querySelectorAll('.tool-card').length === 20 && location.search === ''");
+  await waitFor("document.querySelectorAll('.tool-card').length === 27 && location.search === ''");
   await navigate("/ferramentas?categoria=inexistente");
   assert.equal(await evaluate("document.querySelector('.category-pill[aria-current=page]').textContent"), "Todos");
-  console.log("PASS all nine category filters, active state, combined search, empty-state reset and unknown category fallback");
+  console.log("PASS all ten category filters, active state, combined search, empty-state reset and unknown category fallback");
+  // Catalog-only mode supports an isolated server without the processing database.
+  if (process.env.SMOKE_CATALOG_ONLY !== "1") {
 
   await navigate("/");
   assert.equal(await evaluate("document.querySelector('.flagship-cta').getAttribute('href')"), "/ferramentas/detector-divergencias");
@@ -255,6 +257,7 @@ try {
     await waitFor("location.pathname === '/' && !!document.querySelector('.account-guest')");
     assert.deepEqual(fixtureErrors, []);
     console.log("PASS authenticated menu, Escape, profile save, header refresh, JSON export, themes, favorite shortcut, five widths and real POST logout (isolated local account)");
+  }
   }
   assert.deepEqual(errors, [], "Uncaught browser exceptions");
   console.log("PASS no uncaught browser exceptions");

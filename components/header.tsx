@@ -52,6 +52,7 @@ export function Header() {
   const links = [
     { href: "/ferramentas/detector-divergencias", label: "Detector de Divergências" },
     { href: "/ferramentas", label: "Ferramentas" },
+    { href: "/juridico", label: "Jurídico" },
     { href: "/precos", label: "Preços" },
   ];
 
