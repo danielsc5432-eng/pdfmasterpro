@@ -4,6 +4,10 @@ Preparado no código, sem ativação e sem alteração das variáveis de produç
 
 ## Back4app: branch de implantação pronta
 
+**Limitação confirmada na documentação oficial atual:** o plano Free fornece URL temporária de 60 minutos por deploy; URL permanente exige plano pago. O aviso `URL expires` na tela da conta é compatível com essa regra. Portanto, não conectar esse plano ao site como processador auxiliar permanente gratuito. A configuração abaixo permanece disponível para testes temporários. Nenhuma rota de produção foi ativada para esse provedor.
+
+Fontes específicas: [guia oficial em português](https://www.back4app.com/blog/pt/como-hospedar-um-app-flutter-web-com-docker) e [guia oficial Node/Docker](https://www.back4app.com/blog/deploy-node-app-dockerfile-back4app). A página geral de preços não descreve essa expiração; não interpretar o preço de US$ 0 como garantia de disponibilidade permanente.
+
 Usar a branch `deploy/back4app-aux`, diretório raiz `./` e Dockerfile padrão `Dockerfile`. Apenas nessa branch, o Dockerfile da raiz é o perfil leve do auxiliar; não mesclar esse Dockerfile sobre o processador nativo principal. Nome sugerido: `pdfmasterpro-aux`. Porta: `3000`. Plano: Free. O segredo de assinatura real ainda deve ser configurado, sem usar o segredo sintético dos testes.
 
 [Validação Linux aprovada](https://github.com/danielsc5432-eng/pdfmasterpro/actions/runs/40437179168): container limitado a 256 MiB, sem swap e 0,25 CPU. Dez cenários HTTP passaram: assinatura ausente/adulterada, recusa de OCR pesado, juntar, dividir, girar, organizar, metadados, upload acima de 8 MiB e saúde final. Pico medido de 83.361.792 bytes (79,5 MiB), sem eventos OOM. PDFs sintéticos de duas páginas; isso não comprova todos os arquivos até o limite de upload. Imagem construída com 1.202.039.956 bytes. A hospedagem efetiva no Back4app e a integração de produção continuam pendentes.
@@ -28,6 +32,6 @@ Testes do roteamento cobrem tamanho, destino padrão, configurações inválidas
 
 ## Outra opção pesquisada
 
-[Back4app Containers Free](https://www.back4app.com/pricing/container-as-a-service): anuncia US$ 0/mês, sem cartão, 256 MB de RAM, 0,25 CPU e 100 GB de transferência. É candidato para testes de tarefas leves; tem menos RAM que o Render e não resolve os motores pesados. [Cadastro](https://www.back4app.com/signup-containers). Página de cadastro acessível na pesquisa; criação de conta e execução não testadas. Não foi confirmada disponibilidade operacional por página de status.
+[Back4app Containers Free](https://www.back4app.com/pricing/container-as-a-service): anuncia US$ 0/mês, sem cartão, 256 MB de RAM, 0,25 CPU e 100 GB de transferência. A URL temporária de 60 minutos restringe seu uso a testes/demonstrações. Tem menos RAM que o Render e não resolve os motores pesados. O usuário conseguiu acessar a configuração da conta, mas a execução nesse provedor não foi verificada. Não foi confirmada disponibilidade operacional por página de status.
 
 Supabase Free também foi pesquisado para apoio de armazenamento (1 GB), não como hospedagem de Java/Python. Não aumenta a RAM dos conversores. Nenhuma conta ou armazenamento externo foi criado.
