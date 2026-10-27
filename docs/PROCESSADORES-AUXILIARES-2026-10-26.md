@@ -2,6 +2,12 @@
 
 Preparado no código, sem ativação e sem alteração das variáveis de produção.
 
+## Back4app: branch de implantação pronta
+
+Usar a branch `deploy/back4app-aux`, diretório raiz `./` e Dockerfile padrão `Dockerfile`. Apenas nessa branch, o Dockerfile da raiz é o perfil leve do auxiliar; não mesclar esse Dockerfile sobre o processador nativo principal. Nome sugerido: `pdfmasterpro-aux`. Porta: `3000`. Plano: Free. O segredo de assinatura real ainda deve ser configurado, sem usar o segredo sintético dos testes.
+
+[Validação Linux aprovada](https://github.com/danielsc5432-eng/pdfmasterpro/actions/runs/40437179168): container limitado a 256 MiB, sem swap e 0,25 CPU. Dez cenários HTTP passaram: assinatura ausente/adulterada, recusa de OCR pesado, juntar, dividir, girar, organizar, metadados, upload acima de 8 MiB e saúde final. Pico medido de 83.361.792 bytes (79,5 MiB), sem eventos OOM. PDFs sintéticos de duas páginas; isso não comprova todos os arquivos até o limite de upload. Imagem construída com 1.202.039.956 bytes. A hospedagem efetiva no Back4app e a integração de produção continuam pendentes.
+
 ## Railway
 
 O cadastro de novas contas está pausado conforme aviso ativo no [status oficial](https://status.railway.com/). Não é possível concluir a hospedagem até haver uma conta disponível. A integração não exige contratar Hobby: o plano pretendido é Free, com crédito limitado de US$ 1/mês e 0,5 GB de RAM. [Planos](https://docs.railway.com/pricing/plans).
