@@ -9,7 +9,7 @@ import JSZip from 'jszip';
 async function main(){
  const root=path.resolve('.vercel/review/ocrmypdf-benchmark/fixtures');
  const results:unknown[]=[];
- async function check(name:string,run:()=>Promise<void>){await run();results.push({name,passed:true});console.log('PASS',name);}
+ async function check(name:string,run:()=>Promise<void>){console.log('START',name);const start=Date.now();await run();results.push({name,passed:true,ms:Date.now()-start});console.log('PASS',name);}
  const native=new Uint8Array(await readFile(path.join(root,'native-text.pdf')));
  for(const engine of ['pdfbox','pdfium','poppler']){
   await check(`${engine} text`,async()=>{
@@ -35,7 +35,10 @@ async function main(){
  await check('credentials excluded',async()=>{process.env.RESEND_API_KEY='synthetic-secret';assert.equal(engineEnvironment(root).RESEND_API_KEY,undefined);delete process.env.RESEND_API_KEY;});
  await check('native OCR byte preservation',async()=>{assert.deepEqual(await ocrPdf(native,'por+eng'),native);});
  for(const fixture of ['scan-300dpi','small-print-6pt','mixed-native-scan','rotated-90deg'])await check(`${fixture} verified OCR`,async()=>{
-  const bytes=new Uint8Array(await readFile(path.join(root,`${fixture}.pdf`)));const output=await ocrPdf(bytes,'por+eng');assert.ok(output.length>100);await writeFile(path.join(root,`integrated-${fixture}.pdf`),output);
+  const bytes=new Uint8Array(await readFile(path.join(root,`${fixture}.pdf`)));const output=await ocrPdf(bytes,'por+eng');assert.ok(output.length>100);
+  const text=new TextDecoder().decode(await nativeExtractText(output));
+  for(const value of ['2.500,00','10%','30/11/2026','15','30'])assert.ok(text.includes(value),`${fixture}: missing synthetic value ${value}`);
+  await writeFile(path.join(root,`integrated-${fixture}.pdf`),output);
  });
  for(const fixture of ['corrupt','protected'])await check(`${fixture} rejected`,async()=>{const bytes=new Uint8Array(await readFile(path.join(root,`${fixture}.pdf`)));await assert.rejects(()=>ocrPdf(bytes,'por+eng'));});
  await check('invalid upload rejected',async()=>{await assert.rejects(()=>nativeExtractText(new Uint8Array([1,2,3])));});
