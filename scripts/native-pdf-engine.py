@@ -2,15 +2,36 @@
 import argparse
 import json
 import math
+import re
 import sys
 from pathlib import Path
 
 import pikepdf
 import pypdfium2 as pdfium
-from PIL import ImageChops, ImageStat
+from PIL import Image, ImageChops, ImageStat
 
 MAX_PAGES = 60
 MAX_PIXELS = 4_000_000
+
+def validate_images(folder):
+    """Decode in a short-lived process, keeping full pixel buffers out of Node."""
+    files = sorted(p for p in folder.iterdir() if re.fullmatch(r'pagina-?\d+\.png',p.name,re.I))
+    if not 1 <= len(files) <= MAX_PAGES:
+        raise ValueError('Invalid image count')
+    total = 0
+    for file in files:
+        if file.is_symlink() or not file.is_file():
+            raise ValueError('Invalid output file')
+        total += file.stat().st_size
+        if total > 32*1024*1024:
+            raise ValueError('Image budget exceeded')
+        with Image.open(file) as image:
+            if image.format != 'PNG' or image.width*image.height > MAX_PIXELS:
+                raise ValueError('Invalid image dimensions or format')
+            image.verify()
+        with Image.open(file) as image:
+            image.load()
+    return {'valid': True, 'count':len(files)}
 
 def inspect(path):
     if path.stat().st_size > 25 * 1024 * 1024:
@@ -99,13 +120,16 @@ def check_ocr(source, output):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("operation", choices=["inspect", "text", "render", "check-ocr"])
+    parser.add_argument("operation", choices=["inspect", "text", "render", "check-ocr", "check-images"])
     parser.add_argument("input", type=Path)
     parser.add_argument("output", nargs="?", type=Path)
     parser.add_argument("--start", type=int, default=1)
     parser.add_argument("--end", type=int, default=0)
     parser.add_argument("--dpi", type=int, default=144)
     args = parser.parse_args()
+    if args.operation == 'check-images':
+        print(json.dumps(validate_images(args.input)))
+        return
     if args.operation == "check-ocr":
         print(json.dumps(check_ocr(args.input, args.output)))
         return

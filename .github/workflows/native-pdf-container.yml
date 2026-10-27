@@ -19,6 +19,7 @@ jobs:
       - name: Prepare offline synthetic fixtures
         run: |
           mkdir -p .vercel/review/pdf24-research
+          docker run --rm --network none pdfmaster-native-validation /opt/pdf-engines/bin/python scripts/test-native-png-validation.py
           docker run --name pdf-fixtures --network none pdfmaster-native-validation /opt/pdf2docx/bin/python scripts/prepare-native-engine-fixtures.py
           docker cp pdf-fixtures:/app/.vercel/review/ocrmypdf-benchmark .vercel/review/
       - name: Exercise container with Free plan CPU and RAM limits
