@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import {readFile,writeFile} from 'node:fs/promises';
 import path from 'node:path';
-import {nativeExtractText,engineEnvironment} from '../lib/processing/native-engines';
+import {nativeExtractText,engineEnvironment,renderEnginePages,pdfbox,enginePython,boundedFile} from '../lib/processing/native-engines';
+import {withNativeJob} from '../lib/processing/native-job';
 import {renderPdfToZip} from '../lib/processing/pdf';
 import {ocrPdf} from '../lib/processing/extended';
 import JSZip from 'jszip';
@@ -11,8 +12,20 @@ async function main(){
  async function check(name:string,run:()=>Promise<void>){await run();results.push({name,passed:true});console.log('PASS',name);}
  const native=new Uint8Array(await readFile(path.join(root,'native-text.pdf')));
  for(const engine of ['pdfbox','pdfium','poppler']){
-  await check(`${engine} text`,async()=>{process.env.PDF_TEXT_ENGINE=engine;assert.ok(new TextDecoder().decode(await nativeExtractText(native)).trim().length>30);});
-  await check(`${engine} render`,async()=>{process.env.PDF_RASTERIZER=engine;const zip=await JSZip.loadAsync(await renderPdfToZip(native,1,1));assert.equal(Object.keys(zip.files).length,1);});
+  await check(`${engine} text`,async()=>{
+   process.env.PDF_TEXT_ENGINE=engine;assert.ok(new TextDecoder().decode(await nativeExtractText(native)).trim().length>30);
+   if(engine!=='poppler')await withNativeJob(native,'pdf',async({directory,inputPath})=>{
+    const output=path.join(directory,'direct.txt');
+    if(engine==='pdfbox')await pdfbox(['export:text','-encoding=UTF-8','-sort',`-i=${inputPath}`,`-o=${output}`],directory);
+    else await enginePython(['text',inputPath,output],directory);
+    assert.ok((await boundedFile(output)).length>30);
+   });
+  });
+  await check(`${engine} render`,async()=>{
+   process.env.PDF_RASTERIZER=engine;
+   await withNativeJob(native,'pdf',async({directory,inputPath})=>{assert.equal((await renderEnginePages(inputPath,directory,1,1)).engine,engine);});
+   const zip=await JSZip.loadAsync(await renderPdfToZip(native,1,1));assert.equal(Object.keys(zip.files).length,1);
+  });
  }
  await check('missing Poppler automatic fallback',async()=>{
   process.env.PDF_TEXT_ENGINE='auto';process.env.PDF_TEXT_EXTRACTOR='pdfmaster-missing-executable';

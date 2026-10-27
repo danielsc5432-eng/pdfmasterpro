@@ -1,8 +1,6 @@
 """Generate synthetic PDFs offline using the existing Word engine environment."""
-import io
 from pathlib import Path
 import fitz
-from PIL import Image
 
 out = Path('.vercel/review/ocrmypdf-benchmark/fixtures')
 out.mkdir(parents=True, exist_ok=True)
@@ -23,12 +21,9 @@ def native(size=12):
 def scan(size=12, rotated=False):
     source = native(size)
     pix = source[0].get_pixmap(matrix=fitz.Matrix(300/72,300/72), alpha=False)
-    image = Image.open(io.BytesIO(pix.tobytes('png'))).convert('RGB')
-    encoded = io.BytesIO()
-    image.save(encoded, format='PNG')
     doc = fitz.open()
     page = doc.new_page(width=595,height=842)
-    page.insert_image(page.rect, stream=encoded.getvalue())
+    page.insert_image(page.rect, stream=pix.tobytes('png'))
     if rotated:
         page.set_rotation(90)
     source.close()
