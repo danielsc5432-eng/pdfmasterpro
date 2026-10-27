@@ -5,12 +5,15 @@ import { resolveEntitlements } from "@/lib/billing/entitlements";
 import { readSignedPlan, signPlanHeaders } from "@/lib/billing/plan-token";
 import { commandExists } from "@/lib/processing/system";
 import type { SummaryCapabilities } from "@/lib/summary/types";
+import { processingWorkerUrl } from "@/lib/processing/worker-routing";
 
 export const runtime = "nodejs";
 export async function GET(request: NextRequest) {
   const headers = { "Cache-Control": "private, no-store" };
   if (process.env.PROCESSING_WORKER_ONLY === "1" && !readSignedPlan(request.headers)) return NextResponse.json({ error: "Consulte as capacidades pelo site principal." }, { status: 403, headers });
-  const worker = process.env.PROCESSING_WORKER_URL?.trim();
+  let worker: string | undefined;
+  try { worker = processingWorkerUrl("resumir-pdf-ia"); }
+  catch { return NextResponse.json({ error: "A configuração dos processadores está indisponível." }, { status: 503, headers }); }
   let capabilities: SummaryCapabilities;
   if (worker) {
     try {

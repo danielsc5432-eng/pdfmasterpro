@@ -8,7 +8,7 @@ import { attachSessionCookie, countRecentTasks, createProcessingTask, getSession
 import { getTool } from "@/lib/tools/catalog";
 import { isLocalLegalSlug } from "@/lib/legal/suite-config";
 import { resolveEntitlements } from "@/lib/billing/entitlements";
-import { PLAN_HEADER, PLAN_SIGNATURE_HEADER, signPlanHeaders } from "@/lib/billing/plan-token";
+import { signPlanHeaders } from "@/lib/billing/plan-token";
 import type { Plan } from "@/lib/plans";
 import { getCurrentUser, getPublicOrigin } from "@/lib/auth/session";
 import { testingTaskLimit } from "@/lib/billing/testing-quota";
@@ -19,10 +19,11 @@ import { reserveFreeTask } from "@/lib/security/quotas";
 import { reserveBudget } from "@/lib/security/quotas";
 import { SUMMARY_LIMITS, summaryOptionsSchema } from "@/lib/summary/types";
 import { summaryStream, trackSummaryStream } from "@/lib/summary/stream";
+import { processingWorkerUrl, workerAcceptsTool, workerRequestHeaders, workerResponseHeaders, workerRequestLimit } from "@/lib/processing/worker-routing";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
-const MAX_REQUEST_BYTES = 130 * 1024 * 1024;
+const MAX_REQUEST_BYTES = workerRequestLimit();
 const angleSchema = z.coerce.number().int().refine((value) => [90, 180, 270].includes(value), "O ângulo deve ser 90, 180 ou 270 graus.");
 const pageSchema = z.coerce.number().int().min(1, "A página deve ser um número inteiro positivo.");
 const positionSchema = z.enum(["top-left", "top-center", "top-right", "center", "bottom-left", "bottom-center", "bottom-right"]);
@@ -42,6 +43,10 @@ export async function POST(request: NextRequest) {
   if (isLocalLegalSlug(tool)) return errorResponse("As ferramentas jurídicas processam os PDFs localmente no navegador. Abra a ferramenta para analisar sem enviar os documentos.", 400);
   const entitlements = await resolveEntitlements(request);
   if (process.env.PROCESSING_WORKER_ONLY === "1" && entitlements.source !== "signed") return errorResponse("Este processador aceita tarefas somente pelo site principal.", 403);
+  try {
+    if (!workerAcceptsTool(tool)) return errorResponse("Esta ferramenta não é atendida por este processador.", 403);
+  } catch { return errorResponse("A configuração deste processador está indisponível.", 503); }
+  if (Number(request.headers.get("content-length") || 0) > MAX_REQUEST_BYTES) return errorResponse("O arquivo excede o limite deste processador.", 413);
   const limits = entitlements.plan.limits;
   if (tool === "resumir-pdf-ia") {
     if (Number(request.headers.get("content-length") || 0) > SUMMARY_LIMITS.uploadBytes + 16384) return errorResponse("O resumo aceita um PDF de até 4 MB nesta hospedagem.", 413);
@@ -77,7 +82,9 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const workerUrl = process.env.PROCESSING_WORKER_URL?.trim();
+  let workerUrl: string | undefined;
+  try { workerUrl = processingWorkerUrl(tool, Number(request.headers.get("content-length") || 0)); }
+  catch { return finish(errorResponse("A configuração dos processadores está indisponível.", 503), request, session); }
   if (tool === "detector-divergencias" && Number(request.headers.get("content-length") || 0) > 26 * 1024 * 1024) return errorResponse("A análise permite até 25 MB de PDFs por tarefa.", 413);
   if (workerUrl) {
     // O worker é um processador sem estado: não tem banco nem sessão. A
@@ -93,25 +100,18 @@ export async function POST(request: NextRequest) {
     const proxyAbort = new AbortController();
     try {
       const target = `${workerUrl.replace(/\/$/, "")}/api/v1/process${request.nextUrl.search}`;
-      const proxyHeaders = new Headers(request.headers);
-      proxyHeaders.set("accept-encoding", "identity");
-      proxyHeaders.delete(PLAN_HEADER);
-      proxyHeaders.delete(PLAN_SIGNATURE_HEADER);
       const signed = signPlanHeaders(entitlements.plan.id);
-      if (signed) for (const [key, value] of Object.entries(signed)) proxyHeaders.set(key, value);
+      const proxyHeaders = workerRequestHeaders(request.headers, signed);
       const response = await fetch(target, {
         method: "POST",
         headers: proxyHeaders,
         body: request.body,
         signal: AbortSignal.any([request.signal, proxyAbort.signal]),
         duplex: "half",
+        redirect: "error",
       } as RequestInit);
-      const headers = new Headers(response.headers);
-      // O fetch já entrega o corpo decodificado: cabeçalhos de entidade do upstream ficariam inconsistentes.
-      headers.delete("transfer-encoding");
-      const outputBytes = Number(headers.get("content-length") || 0);
-      headers.delete("content-length");
-      headers.delete("content-encoding");
+      const headers = workerResponseHeaders(response.headers);
+      const outputBytes = Number(response.headers.get("content-length") || 0);
       const outputType = (headers.get("content-type") || "application/octet-stream").slice(0, 100);
       if (tool === "resumir-pdf-ia" && response.ok && response.body && outputType.startsWith("text/event-stream")) {
         const body = trackSummaryStream(response.body, () => markProcessingTaskCompleted(taskId, 0, "application/json"), () => markProcessingTaskFailed(taskId, "summary_incomplete"), () => proxyAbort.abort());
@@ -140,14 +140,14 @@ export async function POST(request: NextRequest) {
     let options;
     try { options = summaryOptionsSchema.parse(JSON.parse(String(form.get("options") || "{}"))); }
     catch { return finish(errorResponse("Selecione o tamanho, um modo válido e autorize o envio do texto ao provedor de IA.", 422), request, session); }
-    const taskId = await createProcessingTask({ sessionHash: session.hash, toolSlug: tool, fileCount: 1, inputBytes: files[0].bytes.length });
+    const taskId = process.env.PROCESSING_WORKER_ONLY === "1" ? null : await createProcessingTask({ sessionHash: session.hash, toolSlug: tool, fileCount: 1, inputBytes: files[0].bytes.length });
     try {
       const response = summaryStream(files[0].bytes, files[0].name, options, request.signal);
       const tracked = trackSummaryStream(response.body!, () => markProcessingTaskCompleted(taskId, 0, "application/json"), () => markProcessingTaskFailed(taskId, "summary_failed"), () => {});
       return finish(new NextResponse(tracked, { headers: response.headers }), request, session);
     } catch { await markProcessingTaskFailed(taskId, "summary_unavailable"); return finish(errorResponse("Confira as opções, o consentimento e se o modo de IA está configurado no processador.", 503), request, session); }
   }
-  const taskId = await createProcessingTask({ sessionHash: session.hash, toolSlug: tool, fileCount: files.length, inputBytes: files.reduce((total, file) => total + file.bytes.byteLength, 0) });
+  const taskId = process.env.PROCESSING_WORKER_ONLY === "1" ? null : await createProcessingTask({ sessionHash: session.hash, toolSlug: tool, fileCount: files.length, inputBytes: files.reduce((total, file) => total + file.bytes.byteLength, 0) });
   const invalidTask = async (message: string, status = 400) => { await markProcessingTaskFailed(taskId, "invalid_options").catch(() => undefined); return finish(errorResponse(message, status), request, session); };
   try {
     if (tool === "detector-divergencias") {
