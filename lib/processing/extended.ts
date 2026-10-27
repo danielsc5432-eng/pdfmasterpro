@@ -7,6 +7,8 @@ import { PNG } from "pngjs";
 import { commandExists, execFile } from "./system";
 import { docxToPdfWithMsWord } from "./msword";
 import { cliConvert, configuredCli } from "./cli-engine";
+import { nativeExtractText, engineEnvironment, renderEnginePages, type NativePdfInfo } from "./native-engines";
+import { smartOcrPdf } from "./smart-ocr";
 
 const fontColor = rgb(0.12, 0.14, 0.2);
 async function tempDir(prefix: string) { return mkdtemp(path.join(os.tmpdir(), prefix)); }
@@ -14,7 +16,7 @@ function safeText(value: unknown, fallback: string) { const text = String(value 
 function colorFromHex(value: string) { const hex = /^#[0-9a-f]{6}$/i.test(value) ? value.slice(1) : "202431"; return rgb(parseInt(hex.slice(0, 2), 16) / 255, parseInt(hex.slice(2, 4), 16) / 255, parseInt(hex.slice(4, 6), 16) / 255); }
 function positionFor(position: string, pageWidth: number, pageHeight: number, textWidth: number, textHeight: number, margin = 36) { const p = ["top-left", "top-center", "top-right", "center", "bottom-left", "bottom-center", "bottom-right"].includes(position) ? position : "center"; const x = p.endsWith("left") ? margin : p.endsWith("right") ? pageWidth - textWidth - margin : (pageWidth - textWidth) / 2; const y = p.startsWith("top") ? pageHeight - textHeight - margin : p === "center" ? (pageHeight - textHeight) / 2 : margin; return { x: Math.max(margin, x), y: Math.max(margin, y) }; }
 
-export async function extractPdfText(input: Uint8Array) { const extractor = process.env.PDF_TEXT_EXTRACTOR || "pdftotext"; if (!(await commandExists(extractor))) throw new Error("O extrator de texto PDF não está configurado neste servidor."); const dir = await tempDir("pdfmaster-text-"); const inputPath = path.join(dir, "input.pdf"); const outputPath = path.join(dir, "output.txt"); try { await writeFile(inputPath, input); await execFile(extractor, ["-layout", "-enc", "UTF-8", inputPath, outputPath], { timeout: 120000 }); const text = await readFile(outputPath); if (!text.toString("utf8").trim()) throw new Error("Este PDF não contém texto extraível. OCR será necessário para documentos digitalizados."); return new Uint8Array(text); } finally { await rm(dir, { recursive: true, force: true }); } }
+export async function extractPdfText(input: Uint8Array) { return nativeExtractText(input); }
 
 export async function wordToPdf(input: Uint8Array, originalName: string) {
   if(configuredCli("word-to-pdf")){
@@ -28,8 +30,20 @@ export async function wordToPdf(input: Uint8Array, originalName: string) {
   const converter = !configured || configured.toLowerCase() === "msword" ? (process.env.SOFFICE_CONVERTER || "soffice") : configured;
   if (!(await commandExists(converter))) throw new Error("O conversor Word não está configurado neste servidor."); const dir = await tempDir("pdfmaster-word-"); const extension = originalName.toLowerCase().endsWith(".doc") ? "doc" : "docx"; const inputPath = path.join(dir, `input.${extension}`); const outputPath = path.join(dir, "input.pdf"); const profile = path.join(dir, "profile"); try { await writeFile(inputPath, input); await execFile(converter, [`-env:UserInstallation=${pathToFileURL(profile).href}`, "--headless", "--convert-to", "pdf:writer_pdf_Export", "--outdir", dir, inputPath], { timeout: 120000 }); const output = await readFile(outputPath); if (!output.length) throw new Error("O conversor Word retornou um PDF vazio."); return new Uint8Array(output); } finally { await rm(dir, { recursive: true, force: true }); } }
 
-async function renderPdf(input: Uint8Array, prefix: string, dpi = "144") { const renderer = process.env.PDF_RENDERER || "pdftoppm"; if (!(await commandExists(renderer))) throw new Error("O renderizador PDF não está configurado neste servidor."); const dir = await tempDir(prefix); const inputPath = path.join(dir, "input.pdf"); const outputPrefix = path.join(dir, "page"); await writeFile(inputPath, input); await execFile(renderer, ["-png", "-r", dpi, inputPath, outputPrefix], { timeout: 120000 }); const names = (await readdir(dir)).filter((name) => /^page-\d+\.png$/.test(name)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })); return { dir, names }; }
-export async function ocrPdf(input: Uint8Array, language = "eng") { const engine = process.env.OCR_ENGINE || "tesseract"; if (!(await commandExists(engine))) throw new Error("O OCR não está configurado neste servidor."); const rendered = await renderPdf(input, "pdfmaster-ocr-"); try { const output = await PDFDocument.create(); for (const name of rendered.names) { const base = path.join(rendered.dir, name.replace(/\.png$/, "")); await execFile(engine, [path.join(rendered.dir, name), base, "-l", language, "-c", "tessedit_create_pdf=1"], { timeout: 180000 }); const page = await PDFDocument.load(await readFile(`${base}.pdf`)); const copied = await output.copyPages(page, page.getPageIndices()); copied.forEach((item) => output.addPage(item)); } return output.save(); } finally { await rm(rendered.dir, { recursive: true, force: true }); } }
+async function renderPdf(input: Uint8Array, prefix: string) {
+  const dir=await tempDir(prefix);try{const file=path.join(dir,"input.pdf");await writeFile(file,input);const rendered=await renderEnginePages(file,dir,1,0);return {dir,names:rendered.names.map(name=>path.relative(dir,path.join(rendered.directory,name)))};}catch(error){await rm(dir,{recursive:true,force:true});throw error;}
+}
+export async function ocrPdf(input: Uint8Array, language = "eng") { return smartOcrPdf(input,language,legacyOcrPdf); }
+async function legacyOcrPdf(input: Uint8Array, language: string, info?:NativePdfInfo, deadline=Date.now()+180000) {
+  const engine=process.env.OCR_ENGINE||"tesseract";if(!(await commandExists(engine)))throw Error("OCR não configurado.");
+  const rendered=await renderPdf(input,"pdfmaster-ocr-");const original=await PDFDocument.load(input);
+  try{const output=await PDFDocument.create();for(const [index,name]of rendered.names.entries()){
+    if(info&&!info.pages[index].needsOcr){const [copy]=await output.copyPages(original,[index]);output.addPage(copy);continue;}
+    if(deadline-Date.now()<1000)throw Error("OCR timeout.");
+    const base=path.join(rendered.dir,name.replace(/\.png$/,""));await execFile(engine,[path.join(rendered.dir,name),base,"-l",language,"-c","tessedit_create_pdf=1"],{timeout:Math.min(40000,deadline-Date.now()),windowsHide:true,maxBuffer:1024*1024,env:engineEnvironment(rendered.dir)});
+    const page=await PDFDocument.load(await readFile(`${base}.pdf`));const copied=await output.copyPages(page,page.getPageIndices());copied.forEach(item=>output.addPage(item));
+  }return output.save();}finally{await rm(rendered.dir,{recursive:true,force:true});}
+}
 export async function ocrImage(input: Uint8Array, kind: "jpg" | "png", language = "eng") { const engine = process.env.OCR_ENGINE || "tesseract"; if (!(await commandExists(engine))) throw new Error("O OCR não está configurado neste servidor."); const dir = await tempDir("pdfmaster-ocr-image-"); const inputPath = path.join(dir, `input.${kind}`); const base = path.join(dir, "output"); try { await writeFile(inputPath, input); await execFile(engine, [inputPath, base, "-l", language, "-c", "tessedit_create_pdf=1"], { timeout: 180000 }); return new Uint8Array(await readFile(`${base}.pdf`)); } finally { await rm(dir, { recursive: true, force: true }); } }
 
 export async function addWatermark(input: Uint8Array, options: { text: string; opacity: number; rotation: number; position: string; color: string }) { const document = await PDFDocument.load(input); const font = await document.embedFont(StandardFonts.HelveticaBold); for (const page of document.getPages()) { const text = safeText(options.text, "PDF Master Pro"); const size = 30; const width = font.widthOfTextAtSize(text, size); const { x, y } = positionFor(options.position, page.getWidth(), page.getHeight(), width, size); page.drawText(text, { x, y, size, font, color: colorFromHex(options.color), opacity: Math.max(0.05, Math.min(1, options.opacity)), rotate: degrees(options.rotation) }); } return document.save(); }
