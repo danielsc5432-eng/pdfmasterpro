@@ -18,12 +18,12 @@ test("cadastro: nome, e-mail normalizado, senha e consentimento são obrigatóri
   for (const changes of [{ name: "x" }, { name: "Pessoa\u0000Teste" }, { email: "inválido" }, { password: "curta" }, { password: "x".repeat(129) }, { terms: false }, { role: "admin" }]) assert.equal(registrationSchema.safeParse({ ...sample, ...changes }).success, false);
 });
 
-test("cadastro: exige 9 caracteres e um simbolo; espacos e acentos nao bastam", () => {
+test("cadastro: exige 9 caracteres, uma maiuscula e um simbolo; espacos e acentos nao bastam", () => {
   const sample = { name: "Pessoa Teste", email: "pessoa@example.com", terms: true };
-  for (const password of ["abcdefg!", "abcdefghijkl", "minha senha longa", "áéíóúçãõáéíó"]) {
+  for (const password of ["Abcdefg!", "abcdefgh!", "ABCDEFGHI", "abcdefghijkl", "minha senha longa", "áéíóúçãõáéíó"]) {
     assert.equal(registrationSchema.safeParse({ ...sample, password }).success, false);
   }
-  for (const password of ["abcdefgh!", "abcdefgh@", "abcdefghijk@", "abcdefghijk#", "abcdefghijk$", "uma frase longa!"]) {
+  for (const password of ["Abcdefgh!", "Abcdefgh@", "Abcdefghijk@", "Abcdefghijk#", "Abcdefghijk$", "Uma frase longa!", "Ábcdefgh!"]) {
     assert.equal(registrationSchema.safeParse({ ...sample, password }).success, true);
   }
   assert.equal(loginPasswordSchema.safeParse("senha antiga sem simbolo").success, true);
