@@ -182,7 +182,7 @@ test("resumo: reserva automática é limitada, transparente e não contorna canc
   calls = 0;
   await assert.rejects(summarizeExtracted({ name: "test.pdf", totalPages: 1, pages }, { ...options, mode: "advanced" }, signal(), () => {}, async () => { calls++; throw new SummaryTransientError("503"); })); assert.equal(calls, 1);
   calls = 0;
-  await assert.rejects(summarizeExtracted({ name: "test.pdf", totalPages: 1, pages }, options, signal(), () => {}, async () => { calls++; return "invalid JSON"; })); assert.equal(calls, 1);
+  await assert.rejects(summarizeExtracted({ name: "test.pdf", totalPages: 1, pages }, options, signal(), () => {}, async () => { calls++; return "invalid JSON"; })); assert.equal(calls, 2);
   const abort = new AbortController(); calls = 0;
   await assert.rejects(summarizeExtracted({ name: "test.pdf", totalPages: 1, pages }, options, abort.signal, () => {}, async () => { calls++; abort.abort(); throw new SummaryTransientError("503"); })); assert.equal(calls, 1);
   process.env.SUMMARY_CF_FREE_CONFIRMED = "false"; assert.equal(summaryFallbackConfig(), null);

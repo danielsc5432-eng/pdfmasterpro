@@ -161,7 +161,7 @@ export function CloneMasterWorkspace() {
   function clear() { operation.current++; stopWorker(); invalidate(); setModels([]); setSources([]); setConfigs({}); setActiveId(""); setInterpretation(""); setError(""); setBusy(false); }
 
   return <section className="clone-workspace workspace" aria-labelledby="clone-title">
-    <div className="workspace-header"><div><h2 id="clone-title">CloneMaster AI</h2><p>Modelos TXT, INI e CFG + fontes XLSX. Somente os campos confirmados serão alterados.</p></div><span className="tool-status status-ready">Processamento local</span></div>
+    <div className="workspace-header"><div><h2 id="clone-title">CloneMaster AI</h2><p>Modelos TXT, INI e CFG + fontes XLSX. Use chave=valor; em TXT também aceitamos Nome: valor ou campos separados por tabulação. Somente os campos confirmados serão alterados.</p></div><span className="tool-status status-ready">Processamento local</span></div>
     <p className="clone-notice">Os arquivos ficam neste navegador. Não há envio para APIs, execução de macros ou cobrança de IA. Interpretação local por regras, sem modelo generativo; revise sempre o plano. Limites: 5 modelos, 5 fontes, 20 MB de entrada e 500 resultados por lote.</p>
     <p className="clone-notice" id="clone-quota">Plano gratuito: até {FREE_MAX_TASKS_PER_DAY} tarefas por janela de 24 horas, compartilhadas com as outras ferramentas. Cada geração de lote consome uma tarefa, mesmo se cancelada depois da autorização. Prévia e downloads do lote pronto não consomem novas tarefas. A cota é validada online, sem enviar o conteúdo dos arquivos. Premium sem cota diária de tarefas.</p>
     <div className="clone-upload-grid">{(["models", "sources"] as const).map(area => <section className="clone-card" key={area}>

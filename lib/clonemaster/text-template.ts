@@ -37,7 +37,8 @@ export function readTextTemplate(id: string, name: string, input: Uint8Array, re
     const heading = line.match(/^[ \t]*\[([^\]\r\n]+)\][ \t]*(?:[;#].*)?$/);
     if (heading) { section = heading[1].trim(); if (section.length > 200) throw Error("Nome de seção excede 200 caracteres."); }
     else if (!/^[ \t]*[;#]/.test(line)) {
-      const match = line.match(/^([ \t]*)([^=\r\n]+?)([ \t]*=[ \t]*)(.*)$/);
+      const match = line.match(/^([ \t]*)([^=\r\n]+?)([ \t]*=[ \t]*)(.*)$/)
+        ?? (extension === "txt" ? line.match(/^([ \t]*)([\p{L}_][\p{L}\p{N}_ .-]{0,99}?)([ \t]*:[ \t]+|\t+)(.*)$/u) : null);
       if (match) {
         const key = match[2].trim(), rest = match[4];
         if (!key || key.length > 100) throw Error("Chave do modelo vazia ou longa demais.");
@@ -51,7 +52,7 @@ export function readTextTemplate(id: string, name: string, input: Uint8Array, re
         const oldValue = rest.slice(0, commentAt).replace(/[ \t]+$/, "");
         // In an empty commented value, the whitespace belongs to the comment
         // separator. Insert before it so the new value cannot swallow a comment.
-        const startCharacter = commentAt === 0 && rest.length > 0 ? position + line.indexOf("=") + 1 : position + match[1].length + match[2].length + match[3].length;
+        const startCharacter = commentAt === 0 && rest.length > 0 ? position + match[1].length + match[2].length + match[3].search(/[=:]|\t/) + 1 : position + match[1].length + match[2].length + match[3].length;
         const start = bomLength + encodeText(text.slice(0, startCharacter), encoding).length;
         const identity = section + "\0" + key, occurrence = (occurrences.get(identity) ?? 0) + 1;
         occurrences.set(identity, occurrence);
@@ -62,7 +63,7 @@ export function readTextTemplate(id: string, name: string, input: Uint8Array, re
     position += lineWithBreak.length;
     lineNumber++;
   }
-  if (!fields.length) throw Error("Nenhuma chave=valor encontrada no modelo. Outros formatos ainda não têm adaptador.");
+  if (!fields.length) throw Error("Não foram encontrados campos editáveis. Use chave=valor; em TXT também aceitamos Nome: valor ou chave e valor separados por tabulação. Texto livre e tabelas exigem um modelo estruturado.");
   return { id, name, extension, bytes: input.slice(), text, encoding, bomLength, fields };
 }
 

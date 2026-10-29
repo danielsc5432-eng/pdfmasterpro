@@ -3,7 +3,7 @@ import { z } from "zod";
 import { generateSummaryPoints, summaryConfig, summaryFallbackConfig, SummaryTransientError } from "./provider";
 import { SUMMARY_LIMITS, type SummaryOptions, type SummarySource, type SummaryPoint, type SummaryPage, type SummaryProgress, type SummaryResult } from "./types";
 
-const normalize = (text: string) => text.replace(/\s+/g, " ").trim();
+const normalize = (text: string) => text.normalize("NFC").replace(/\u00ad/g, "").replace(/\s+/g, " ").trim();
 const numericTokens = (text: string) => text.match(/[+-]?\d+(?:[.,:/-]\d+)*(?:\s*%)?/g)?.map(normalize) || [];
 const currencyTokens = (text: string) => text.match(/US\$|R\$|\b(?:USD|BRL|EUR|GBP)\b|€|£/gi)?.map(value => value.toUpperCase()) || [];
 const pointsSchema = z.object({ points: z.array(z.object({ text: z.string().trim().min(8).max(1200), evidence: z.array(z.object({ sourceId: z.string().max(40), quote: z.string().trim().min(10).max(650) }).strict()).min(1).max(3) }).strict()).max(10) }).strict();
@@ -68,7 +68,21 @@ export async function summarizeExtracted(input: { name: string; totalPages: numb
     }
     used.set(activeConfig.provider, (options.mode === "advanced" ? activeConfig.advanced : activeConfig.standard)!);
     signal.throwIfAborted();
-    const points = validateSummaryPoints(content, chunks[index]); maps.push(points);
+    let points: SummaryPoint[];
+    try { points = validateSummaryPoints(content, chunks[index]); }
+    catch (error) {
+      signal.throwIfAborted();
+      // Share the one-call contingency budget with provider failover. Never
+      // accept ungrounded content or silently remove failing assertions.
+      if (calls >= chunks.length + 1 || switched) throw error;
+      progress({ type: "progress", stage: "checking", message: "Conferindo novamente as citações deste trecho.", current: index, total: chunks.length });
+      calls++;
+      content = await generate(chunks[index], options, "A tentativa anterior falhou na validação. Gere novamente usando apenas citações literais contínuas dos sourceId fornecidos, sem paráfrases nas citações. Preserve exatamente números, moedas e datas. " + context, signal, undefined, activeConfig);
+      points = validateSummaryPoints(content, chunks[index]);
+      // No further fallback/retry is permitted after consuming contingency.
+      switched = true;
+    }
+    maps.push(points);
     context = points.slice(-2).map(point => point.text).join(" ");
     progress({ type: "progress", stage: "summarizing", message: `Trecho ${index + 1} de ${chunks.length} analisado e conferido.`, current: index + 1, total: chunks.length });
   }
@@ -83,7 +97,7 @@ export async function summarizeExtracted(input: { name: string; totalPages: numb
   if (!selected.length) throw Error("A IA não encontrou informações suficientes para o foco solicitado. Tente outro intervalo ou instruções mais gerais.");
   const sources = [...new Map(chunks.flat().map(source => [source.id, source])).values()].filter(source => selected.some(point => point.evidence.some(item => item.sourceId === source.id)));
   const warnings = input.pages.filter(page => page.warning).map(page => `Página ${page.number}: ${page.warning}`);
-  if (switched) warnings.push("A IA de reserva foi utilizada automaticamente após indisponibilidade da principal.");
+  if (used.size > 1 || activeConfig !== config) warnings.push("A IA de reserva foi utilizada automaticamente após indisponibilidade da principal.");
   if (input.pages.some(page => page.ocr)) warnings.push("OCR foi utilizado. Revise nas páginas originais os valores, nomes e datas reconhecidos.");
   warnings.push("As citações e os números foram conferidos no texto extraído. Isso não garante que a interpretação da IA esteja correta; revise o documento original.");
   if (selected.length === maximum && maps.flat().length > maximum) warnings.push("O tamanho escolhido seleciona os tópicos principais; o resumo não reproduz todas as informações do documento.");
