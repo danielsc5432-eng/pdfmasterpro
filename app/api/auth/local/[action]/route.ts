@@ -26,7 +26,7 @@ async function handlePost(request: NextRequest, context: { params: Promise<{ act
     while (true) { const item = await reader.read(); if (item.done) break; if (data.length + item.value.length > 4096) { await reader.cancel(); return error("Dados acima do limite.", 413); } data = Buffer.concat([data, item.value]); }
     const schema = action === "register" ? registrationSchema : action === "verify" ? z.object({ email: emailSchema, code: z.string().regex(/^\d{6}$/) }).strict() : z.object({ email: emailSchema, password: loginPasswordSchema }).strict();
     input = schema.parse(JSON.parse(data.toString("utf8")));
-  } catch { return error("Confira os campos. No cadastro, a senha deve ter de 12 a 128 caracteres e pelo menos 1 caractere especial (como ! ou @); o código tem seis dígitos.", 422); }
+  } catch { return error("Confira os campos. No cadastro, a senha deve ter de 9 a 128 caracteres e pelo menos 1 caractere especial (como ! ou @); o código tem seis dígitos.", 422); }
   try {
     const ip = trustedClientIp(request);
     if ((ip && !await allowAuthAttempt(`ip:${ip}`, 30)) || !await allowAuthAttempt(`${action}:${canonicalEmail(input.email)}`, action === "register" ? 4 : 10)) return error("Muitas tentativas. Aguarde até a próxima hora ou use outra opção de acesso.", 429);

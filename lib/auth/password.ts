@@ -3,8 +3,8 @@ import { z } from "zod";
 import { hasSpecialCharacter, PASSWORD_SPECIAL_MESSAGE } from "./password-policy";
 
 export const emailSchema = z.email().max(254).transform(value => value.toLowerCase());
-export const loginPasswordSchema = z.string().min(12).max(128);
-export const passwordSchema = z.string().min(12, "Use pelo menos 12 caracteres.").max(128, "Use no máximo 128 caracteres.").refine(hasSpecialCharacter, PASSWORD_SPECIAL_MESSAGE);
+export const loginPasswordSchema = z.string().min(9).max(128);
+export const passwordSchema = z.string().min(9, "Use pelo menos 9 caracteres.").max(128, "Use no máximo 128 caracteres.").refine(hasSpecialCharacter, PASSWORD_SPECIAL_MESSAGE);
 export const registrationSchema = z.object({ name: z.string().trim().min(2).max(80).refine(value => !/\p{C}/u.test(value)), email: emailSchema, password: passwordSchema, terms: z.literal(true) }).strict();
 const options = { N: 32768, r: 8, p: 3, maxmem: 64 * 1024 * 1024 };
 function derive(password: string, salt: string) { return new Promise<Buffer>((resolve, reject) => scrypt(password, salt, 64, options, (error, result) => error ? reject(error) : resolve(result))); }
