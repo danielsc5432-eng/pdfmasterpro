@@ -13,12 +13,13 @@ export async function allowAuthAttempt(actor: string, limit: number, query: type
 }
 export async function registerLocal(name: string, email: string, password: string, sendCode: (email: string, code: string) => Promise<void>, query: typeof dbQuery = dbQuery) {
   const existing = await query("SELECT open_id FROM account_email_identities WHERE normalized_email = ? UNION SELECT open_id FROM users WHERE lower(email) = ? LIMIT 1", [canonicalEmail(email), email]);
-  if (existing.length) return; // Never attach a password to a Google/Manus account on email alone.
+  if (existing.length) return "existing" as const; // Never attach a password to a Google/Manus account on email alone.
   const code = String(randomInt(100000, 1000000));
   const rows = await query("INSERT INTO local_accounts (email, user_id, display_name, password_hash, verification_hash, verification_expires) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP + INTERVAL '20 minutes') ON CONFLICT (email) DO UPDATE SET display_name = EXCLUDED.display_name, password_hash = EXCLUDED.password_hash, verification_hash = EXCLUDED.verification_hash, verification_expires = EXCLUDED.verification_expires, verification_attempts = 0, created_at = CURRENT_TIMESTAMP WHERE local_accounts.verified_at IS NULL RETURNING email", [email, `local:${randomUUID()}`, name, await hashPassword(password), verificationHash(email, code)]);
   if (rows.length) await sendCode(email, code);
   await query("DELETE FROM local_accounts WHERE verified_at IS NULL AND created_at < CURRENT_TIMESTAMP - INTERVAL '1 day'");
   await query("DELETE FROM local_auth_limits WHERE hour < CURRENT_TIMESTAMP - INTERVAL '2 days'");
+  return rows.length ? "sent" as const : "existing" as const;
 }
 export async function verifyLocal(email: string, code: string, query: typeof dbQuery = dbQuery): Promise<AppUser | null> {
   // Count wrong and correct attempts atomically before testing the code; no concurrent bypass.

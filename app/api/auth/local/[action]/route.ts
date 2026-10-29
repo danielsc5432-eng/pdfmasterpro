@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { sendAccountEmail } from "@/lib/auth/mail";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createSessionToken, getPublicOrigin, SESSION_COOKIE } from "@/lib/auth/session";
@@ -34,10 +35,12 @@ async function handlePost(request: NextRequest, context: { params: Promise<{ act
       if (!process.env.RESEND_API_KEY || !process.env.SUPPORT_FROM_EMAIL) return error("O envio de confirmação está indisponível.", 503);
       if (!device || !await registrationAllowed(request, device)) return error("Limite de cadastros deste navegador ou conexão atingido. Aguarde 24 horas ou fale com o suporte.", 429);
       const data = registrationSchema.parse(input);
-      await registerLocal(data.name, data.email, data.password, async (email, code) => {
-        const response = await fetch("https://api.resend.com/emails", { method: "POST", signal: AbortSignal.timeout(15000), headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify({ from: process.env.SUPPORT_FROM_EMAIL, to: [email], subject: "Confirme seu cadastro no Arquivelio", text: `Seu código de confirmação é ${code}. Ele expira em 20 minutos. Digite-o somente na página de cadastro do Arquivelio. Se você não solicitou este cadastro, ignore esta mensagem.` }) });
-        if (!response.ok || !(await response.json()).id) throw new Error("MAIL_FAILED");
+      const result = await registerLocal(data.name, data.email, data.password, async (email, code) => {
+        await sendAccountEmail(email, "Confirme seu cadastro no Arquivelio", `Seu código de confirmação é ${code}. Ele expira em 20 minutos. Use somente o código mais recente, na página de cadastro da Arquivelio. Se você não solicitou este cadastro, ignore esta mensagem.`);
       });
+      if (result === "existing") {
+        await sendAccountEmail(data.email, "Como acessar sua conta Arquivelio", `Recebemos uma solicitação de cadastro para este endereço, que já possui uma conta. Nenhuma senha foi alterada e nenhum código de novo cadastro foi gerado. Acesse ${origin}/entrar usando o método original: Google, Manus ou e-mail e senha. Se não foi você, ignore esta mensagem.`);
+      }
       return NextResponse.json({ pending: true, message: "Se o endereço estiver disponível para cadastro, enviamos um código. Confira também o spam. Se já tem conta, use a opção de acesso original." }, { headers });
     }
     const user = action === "verify" ? await verifyLocal(input.email, "code" in input ? input.code : "") : await loginLocal(input.email, "password" in input ? input.password : "");
