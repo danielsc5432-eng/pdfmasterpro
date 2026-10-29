@@ -1,4 +1,5 @@
 "use client";
+import { useProcessingPreparation } from "@/components/use-processing-preparation";
 import { AlertCircle, ArrowDown, ArrowUp, CheckCircle2, Download, FileText, Info, Loader2, Trash2, UploadCloud } from "lucide-react";
 import Link from "next/link";
 import { DragEvent, useEffect, useMemo, useRef, useState } from "react";
@@ -13,6 +14,7 @@ type PlanInfo = { planId: string; interval: "free" | "month" | "year"; limits: {
 export function ToolWorkspace({ tool }: { tool: ToolDefinition }) {
   const inputRef = useRef<HTMLInputElement>(null); const [files, setFiles] = useState<File[]>([]); const [dragging, setDragging] = useState(false); const [processing, setProcessing] = useState(false); const [state, setState] = useState<"idle" | "success" | "review" | "error">("idle"); const [message, setMessage] = useState(""); const [output, setOutput] = useState<{ url: string; filename: string } | null>(null);
   const { register, getValues } = useForm<Options>({ defaultValues: { angle: "90", start: "1", end: "", mode: "range", order: "", pageSize: "auto", margin: "0", text: "Arquivelio", opacity: "0.2", rotation: "45", position: "center", color: "#202431", format: "Página {n}", size: "12", password: "", passwordConfirm: "", title: "", author: "", subject: "", keywords: "", page: "0", x: "36", y: "36", width: "144", height: "36", language: "por" } });
+  useProcessingPreparation(tool.slug, files.reduce((sum, file) => sum + file.size, 0));
   const ready = tool.status === "ready"; const acceptsMultiple = tool.slug === "juntar-pdf" || tool.slug === "imagens-para-pdf";
   const accepted = useMemo(() => tool.slug === "imagens-para-pdf" ? ".jpg,.jpeg,.png" : tool.slug === "word-para-pdf" ? ".doc,.docx" : tool.slug === "ocr-pdf" ? ".pdf,.jpg,.jpeg,.png" : ".pdf", [tool.slug]);
   const [plan, setPlan] = useState<PlanInfo | null>(null);

@@ -1,4 +1,5 @@
 "use client";
+import { useProcessingPreparation } from "@/components/use-processing-preparation";
 
 import { useEffect, useRef, useState } from "react";
 import { takeQueuedFiles } from "@/lib/pending-files";
@@ -11,6 +12,7 @@ const uploadMb = Math.max(1, Math.min(25, Number(process.env.NEXT_PUBLIC_DIVERGE
 
 export function DivergenceWorkspace() {
   const [files, setFiles] = useState<File[]>([]);
+  useProcessingPreparation("detector-divergencias", files.reduce((sum, file) => sum + file.size, 0));
   const [modes, setModes] = useState<AnalysisMode[]>(["general"]);
   const [custom, setCustom] = useState("");
   const [useAi, setUseAi] = useState(false);

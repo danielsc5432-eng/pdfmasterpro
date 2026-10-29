@@ -20,6 +20,8 @@ import { reserveBudget } from "@/lib/security/quotas";
 import { SUMMARY_LIMITS, summaryOptionsSchema } from "@/lib/summary/types";
 import { summaryStream, trackSummaryStream } from "@/lib/summary/stream";
 
+import { useDirectProcessing } from "@/lib/processing/fast-local";
+
 export const runtime = "nodejs";
 export const maxDuration = 300;
 const MAX_REQUEST_BYTES = 130 * 1024 * 1024;
@@ -77,7 +79,8 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const workerUrl = process.env.PROCESSING_WORKER_URL?.trim();
+  const direct = useDirectProcessing(tool, Number(request.headers.get("content-length") || 0));
+  const workerUrl = direct ? undefined : process.env.PROCESSING_WORKER_URL?.trim();
   if (tool === "detector-divergencias" && Number(request.headers.get("content-length") || 0) > 26 * 1024 * 1024) return errorResponse("A análise permite até 25 MB de PDFs por tarefa.", 413);
   if (workerUrl) {
     // O worker é um processador sem estado: não tem banco nem sessão. A
@@ -159,7 +162,7 @@ export async function POST(request: NextRequest) {
       return finish(NextResponse.json(result, { headers: { "Cache-Control": "private, no-store" } }), request, session);
     }
     let output: Uint8Array; let filename = `${safeFilename(files[0].name, "documento")}-resultado.pdf`;
-    const qualityHeaders: Record<string,string> = {};
+    const qualityHeaders: Record<string,string> = direct ? { "X-Arquivelio-Processing": "direct" } : {};
     if (tool === "juntar-pdf") { output = await mergePdfs(files.map((file) => file.bytes)); filename = "pdf-master-combinado.pdf"; }
     else if (tool === "dividir-pdf") { const mode = String(form.get("mode") || "range"); if (mode === "pages") { output = await splitPdfToZip(files[0].bytes); filename = `${safeFilename(files[0].name, "documento")}-paginas.zip`; } else { const start = pageSchema.parse(form.get("start") || 1); const rawEnd = String(form.get("end") || "").trim(); const end = rawEnd ? pageSchema.parse(rawEnd) : 0; if (end && end < start) return invalidTask("O intervalo de páginas é inválido."); output = await extractRange(files[0].bytes, start, end); filename = `${safeFilename(files[0].name, "documento")}-recorte.pdf`; } }
     else if (tool === "girar-pdf") { const angle = angleSchema.parse(form.get("angle") || 90); output = await rotatePdf(files[0].bytes, angle); filename = `${safeFilename(files[0].name, "documento")}-girado.pdf`; }

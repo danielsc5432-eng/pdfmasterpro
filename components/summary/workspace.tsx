@@ -1,4 +1,5 @@
 "use client";
+import { useProcessingPreparation } from "@/components/use-processing-preparation";
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -9,6 +10,7 @@ import "./workspace.css";
 
 export function SummaryWorkspace() {
   const [file, setFile] = useState<File | null>(null), [caps, setCaps] = useState<SummaryCapabilities | null>(null);
+  useProcessingPreparation("resumir-pdf-ia", file?.size || 0);
   const [length, setLength] = useState<SummaryOptions["length"]>("medium"), [mode, setMode] = useState<SummaryOptions["mode"]>("standard");
   const [instructions, setInstructions] = useState(""), [pages, setPages] = useState(""), [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false), [loading, setLoading] = useState(false), [dragging, setDragging] = useState(false);
@@ -17,7 +19,7 @@ export function SummaryWorkspace() {
   const [error, setError] = useState(""), [notice, setNotice] = useState(""), [exporting, setExporting] = useState(false);
   const input = useRef<HTMLInputElement>(null), abort = useRef<AbortController | null>(null), capsAbort = useRef<AbortController | null>(null);
   const requestNumber = useRef(0);
-  useEffect(() => { const queued = takeQueuedFiles(); if (queued.length) add(queued); void loadCaps(); return () => { abort.current?.abort(); capsAbort.current?.abort(); }; }, []); // Files remain only in this page's memory.
+  useEffect(() => { const queued = takeQueuedFiles(); if (queued.length) add(queued); void loadCaps(); const refresh = () => { void loadCaps(); }; window.addEventListener("arquivelio:processor-ready", refresh); return () => { window.removeEventListener("arquivelio:processor-ready", refresh); abort.current?.abort(); capsAbort.current?.abort(); }; }, []); // Files remain only in this page's memory.
   useEffect(() => { if (!result) return; const timer = setTimeout(() => { setResult(null); setEdited(""); setOriginal(""); setFile(null); setConsent(false); setNotice("A sessão do resumo expirou após 30 minutos. Envie o PDF novamente."); }, Math.max(0, Date.parse(result.expiresAt) - Date.now())); return () => clearTimeout(timer); }, [result]);
   async function loadCaps() {
     capsAbort.current?.abort(); const controller = new AbortController(); capsAbort.current = controller; setLoading(true);
