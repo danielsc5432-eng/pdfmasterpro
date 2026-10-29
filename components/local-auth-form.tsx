@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Eye, EyeOff, LockKeyhole, Mail, UserRound } from "lucide-react";
 import "./local-auth-form.css";
@@ -9,6 +9,11 @@ import { hasSpecialCharacter, PASSWORD_SPECIAL_MESSAGE, hasUppercaseLetter, PASS
 export function LocalAuthForm({ mode }: { mode: "signup" | "signin" }) {
   const [email, setEmail] = useState(""); const [name, setName] = useState("");
   const [password, setPassword] = useState(""); const [confirmation, setConfirmation] = useState("");
+  const confirmationInput = useRef<HTMLInputElement>(null);
+  const passwordsDiffer = mode === "signup" && confirmation.length > 0 && password !== confirmation;
+  useEffect(() => {
+    confirmationInput.current?.setCustomValidity(passwordsDiffer ? "As senhas não são iguais. Digite a mesma senha nos dois campos." : "");
+  }, [passwordsDiffer, password, confirmation]);
   const [code, setCode] = useState(""); const [terms, setTerms] = useState(false);
   const [pending, setPending] = useState(false); const [busy, setBusy] = useState(false);
   const [visible, setVisible] = useState(false); const [error, setError] = useState(""); const [notice, setNotice] = useState("");
@@ -34,7 +39,7 @@ export function LocalAuthForm({ mode }: { mode: "signup" | "signin" }) {
       <label htmlFor="local-email"><Mail size={15} /> E-mail</label><input disabled={busy} id="local-email" name="email" type="email" autoComplete="email" maxLength={254} value={email} onChange={event => setEmail(event.target.value.trim())} required />
       <label htmlFor="local-password"><LockKeyhole size={15} /> Senha</label><div className="local-password-field"><input disabled={busy} id="local-password" name="password" type={visible ? "text" : "password"} autoComplete={mode === "signup" ? "new-password" : "current-password"} minLength={9} maxLength={128} value={password} title={mode === "signup" ? "Use no mínimo 9 caracteres, pelo menos 1 letra maiúscula e 1 caractere especial, como !, @ ou #." : undefined} onInvalid={event => { if (mode === "signup") event.currentTarget.setCustomValidity("Use no mínimo 9 caracteres, pelo menos 1 letra maiúscula e 1 caractere especial, como !, @ ou #."); }} onChange={event => { event.target.setCustomValidity(""); setPassword(event.target.value); }} required aria-describedby="local-password-help" /><button type="button" disabled={busy} onClick={() => setVisible(!visible)} aria-label={visible ? "Ocultar senha" : "Mostrar senha"}>{visible ? <EyeOff size={18} /> : <Eye size={18} />}</button></div>
       <small id="local-password-help">{mode === "signup" ? "Use de 9 a 128 caracteres com pelo menos 1 letra maiúscula e 1 caractere especial, como !, @, # ou $." : "Digite a senha cadastrada na sua conta."}</small>
-      {mode === "signup" && <><label htmlFor="local-confirm">Confirme a senha</label><input disabled={busy} id="local-confirm" name="confirmPassword" type={visible ? "text" : "password"} autoComplete="new-password" minLength={9} maxLength={128} value={confirmation} onChange={event => setConfirmation(event.target.value)} required /><label className="local-auth-terms"><input disabled={busy} type="checkbox" checked={terms} onChange={event => setTerms(event.target.checked)} required /> <span>Li e aceito os <Link href="/termos" target="_blank">Termos de uso</Link> e a <Link href="/privacidade" target="_blank">Política de privacidade</Link>.</span></label></>}
+      {mode === "signup" && <><label htmlFor="local-confirm">Confirme a senha</label><input disabled={busy} ref={confirmationInput} id="local-confirm" name="confirmPassword" aria-invalid={passwordsDiffer || undefined} aria-describedby={passwordsDiffer ? "local-confirm-error" : undefined} type={visible ? "text" : "password"} autoComplete="new-password" minLength={9} maxLength={128} value={confirmation} onChange={event => setConfirmation(event.target.value)} required />{passwordsDiffer && <p id="local-confirm-error" className="local-auth-error" role="alert">As senhas não são iguais. Digite a mesma senha nos dois campos.</p>}<label className="local-auth-terms"><input disabled={busy} type="checkbox" checked={terms} onChange={event => setTerms(event.target.checked)} required /> <span>Li e aceito os <Link href="/termos" target="_blank">Termos de uso</Link> e a <Link href="/privacidade" target="_blank">Política de privacidade</Link>.</span></label></>}
     </>}
     {notice && <p className="local-auth-notice" role="status">{notice}</p>}{error && <p className="local-auth-error" role="alert">{error}</p>}
     <button className="button button-primary" type="submit" disabled={busy}>{busy ? "Aguarde…" : pending ? "Confirmar e acessar minha conta" : mode === "signup" ? "Criar minha conta" : "Entrar com e-mail e senha"}</button>
