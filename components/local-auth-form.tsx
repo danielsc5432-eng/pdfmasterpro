@@ -4,6 +4,7 @@ import { FormEvent, useState } from "react";
 import Link from "next/link";
 import { Eye, EyeOff, LockKeyhole, Mail, UserRound } from "lucide-react";
 import "./local-auth-form.css";
+import { hasSpecialCharacter, PASSWORD_SPECIAL_MESSAGE } from "@/lib/auth/password-policy";
 
 export function LocalAuthForm({ mode }: { mode: "signup" | "signin" }) {
   const [email, setEmail] = useState(""); const [name, setName] = useState("");
@@ -13,6 +14,7 @@ export function LocalAuthForm({ mode }: { mode: "signup" | "signin" }) {
   const [visible, setVisible] = useState(false); const [error, setError] = useState(""); const [notice, setNotice] = useState("");
   async function submit(event: FormEvent) {
     event.preventDefault(); if (busy) return; setError("");
+    if (mode === "signup" && !pending && !hasSpecialCharacter(password)) { setError(PASSWORD_SPECIAL_MESSAGE); return; }
     if (mode === "signup" && !pending && password !== confirmation) { setError("As senhas não são iguais."); return; }
     setBusy(true);
     try {
@@ -30,7 +32,7 @@ export function LocalAuthForm({ mode }: { mode: "signup" | "signin" }) {
       {mode === "signup" && <><label htmlFor="local-name"><UserRound size={15} /> Nome completo</label><input disabled={busy} id="local-name" name="name" autoComplete="name" minLength={2} maxLength={80} value={name} onChange={event => setName(event.target.value)} required /></>}
       <label htmlFor="local-email"><Mail size={15} /> E-mail</label><input disabled={busy} id="local-email" name="email" type="email" autoComplete="email" maxLength={254} value={email} onChange={event => setEmail(event.target.value.trim())} required />
       <label htmlFor="local-password"><LockKeyhole size={15} /> Senha</label><div className="local-password-field"><input disabled={busy} id="local-password" name="password" type={visible ? "text" : "password"} autoComplete={mode === "signup" ? "new-password" : "current-password"} minLength={12} maxLength={128} value={password} onChange={event => setPassword(event.target.value)} required aria-describedby="local-password-help" /><button type="button" disabled={busy} onClick={() => setVisible(!visible)} aria-label={visible ? "Ocultar senha" : "Mostrar senha"}>{visible ? <EyeOff size={18} /> : <Eye size={18} />}</button></div>
-      <small id="local-password-help">Use de 12 a 128 caracteres. Uma frase longa pode ser mais fácil de lembrar.</small>
+      <small id="local-password-help">{mode === "signup" ? "Use de 12 a 128 caracteres e pelo menos 1 caractere especial, como !, @, # ou $." : "Digite a senha cadastrada na sua conta."}</small>
       {mode === "signup" && <><label htmlFor="local-confirm">Confirme a senha</label><input disabled={busy} id="local-confirm" name="confirmPassword" type={visible ? "text" : "password"} autoComplete="new-password" minLength={12} maxLength={128} value={confirmation} onChange={event => setConfirmation(event.target.value)} required /><label className="local-auth-terms"><input disabled={busy} type="checkbox" checked={terms} onChange={event => setTerms(event.target.checked)} required /> <span>Li e aceito os <Link href="/termos" target="_blank">Termos de uso</Link> e a <Link href="/privacidade" target="_blank">Política de privacidade</Link>.</span></label></>}
     </>}
     {notice && <p className="local-auth-notice" role="status">{notice}</p>}{error && <p className="local-auth-error" role="alert">{error}</p>}

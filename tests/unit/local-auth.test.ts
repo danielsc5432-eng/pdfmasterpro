@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { hashPassword, verifyPassword, registrationSchema } from "../../lib/auth/password";
+import { hashPassword, verifyPassword, registrationSchema, loginPasswordSchema } from "../../lib/auth/password";
 import { verificationHash } from "../../lib/auth/local-accounts";
 import { POST } from "../../app/api/auth/local/[action]/route";
 import { NextRequest } from "next/server";
@@ -13,9 +13,20 @@ test("cadastro: senha protegida com sal aleatório e comparação correta", asyn
   assert.equal(await verifyPassword(password, "hash-inválido"), false);
 });
 test("cadastro: nome, e-mail normalizado, senha e consentimento são obrigatórios", () => {
-  const sample = { name: "Pessoa Teste", email: "PESSOA@example.com", password: "Minha frase de acesso 123", terms: true };
+  const sample = { name: "Pessoa Teste", email: "PESSOA@example.com", password: "Minha frase de acesso 123!", terms: true };
   assert.equal(registrationSchema.parse(sample).email, "pessoa@example.com");
   for (const changes of [{ name: "x" }, { name: "Pessoa\u0000Teste" }, { email: "inválido" }, { password: "curta" }, { password: "x".repeat(129) }, { terms: false }, { role: "admin" }]) assert.equal(registrationSchema.safeParse({ ...sample, ...changes }).success, false);
+});
+
+test("cadastro: exige 12 caracteres e um simbolo; espacos e acentos nao bastam", () => {
+  const sample = { name: "Pessoa Teste", email: "pessoa@example.com", terms: true };
+  for (const password of ["abcdefghij!", "abcdefghijkl", "minha senha longa", "áéíóúçãõáéíó"]) {
+    assert.equal(registrationSchema.safeParse({ ...sample, password }).success, false);
+  }
+  for (const password of ["abcdefghijk!", "abcdefghijk@", "abcdefghijk#", "abcdefghijk$", "uma frase longa!"]) {
+    assert.equal(registrationSchema.safeParse({ ...sample, password }).success, true);
+  }
+  assert.equal(loginPasswordSchema.safeParse("senha antiga sem simbolo").success, true);
 });
 test("cadastro: confirmação é vinculada ao e-mail e não guarda o código em texto", () => {
   const original = process.env.AUTH_SESSION_SECRET; const manus = process.env.MANUS_JWT_SECRET;
