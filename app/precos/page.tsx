@@ -4,7 +4,7 @@ import { SESSION_COOKIE, readSessionToken } from "@/lib/auth/session";
 import { entitlementsForOpenId } from "@/lib/billing/entitlements";
 import { mercadopagoConfigured } from "@/lib/billing/mercadopago";
 
-export const metadata = { title: "Planos e preços", description: "Compare o plano grátis com o Premium mensal e anual do PDF Master Pro." };
+export const metadata = { title: "Planos e preços", description: "Compare o plano grátis com o Premium mensal e anual do Arquivelio." };
 
 export default async function PricingPage() {
   const jar = await cookies();

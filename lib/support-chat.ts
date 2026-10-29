@@ -24,5 +24,5 @@ export function supportGuidance(topic: string) {
 }
 
 export function ticketText(ticket: SupportTicket, user: { name: string; email: string }, protocol: string) {
-  return [`Atendimento PDF Master Pro — ${protocol}`, `Nome: ${user.name}`, `E-mail para resposta: ${user.email}`, `Assunto: ${ticket.topic}`, `Ferramenta: ${ticket.tool}`, "", "Problema e resultado esperado:", ticket.description, "", "Navegador, dispositivo e contexto do arquivo:", ticket.environment, "", "Tentativas realizadas:", ticket.attempted, "", "O usuário revisou e autorizou o envio deste resumo."].join("\n");
+  return [`Atendimento Arquivelio — ${protocol}`, `Nome: ${user.name}`, `E-mail para resposta: ${user.email}`, `Assunto: ${ticket.topic}`, `Ferramenta: ${ticket.tool}`, "", "Problema e resultado esperado:", ticket.description, "", "Navegador, dispositivo e contexto do arquivo:", ticket.environment, "", "Tentativas realizadas:", ticket.attempted, "", "O usuário revisou e autorizou o envio deste resumo."].join("\n");
 }

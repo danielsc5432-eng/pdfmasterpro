@@ -49,4 +49,4 @@ export async function pageGridSections({pages,assets,artwork}:Parameters<LayoutR
   return sections;
 }
 
-export const renderPageGrid: LayoutReconstructor = async context => new Uint8Array(await Packer.toBuffer(new Document({creator:"PDF Master Pro SDK",sections:await pageGridSections(context)})));
+export const renderPageGrid: LayoutReconstructor = async context => new Uint8Array(await Packer.toBuffer(new Document({creator:"Arquivelio SDK",sections:await pageGridSections(context)})));

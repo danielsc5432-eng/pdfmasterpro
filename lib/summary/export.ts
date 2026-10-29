@@ -26,7 +26,7 @@ export async function summaryPdf(result: SummaryResult, edited: string, changed:
     for (const char of paragraph.replace(/\r/g, "").replace(/\t/g, "    ")) { if (row && font.widthOfTextAtSize(row + char, 10) > 510) draw(); row += char; }
     if (row) draw(); else y -= 10;
   }
-  pdf.setTitle("PDF Master Pro — Resumo de PDF");
+  pdf.setTitle("Arquivelio — Resumo de PDF");
   const pages = pdf.getPages(); pages.forEach((sheet, index) => sheet.drawText(`${index + 1}/${pages.length}`, { x: 42, y: 30, font, size: 8 }));
   return pdf.save();
 }

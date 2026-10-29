@@ -16,7 +16,7 @@ export const renderAdaptivePages:LayoutReconstructor=async({pages,assets,artwork
       catch{sections.push(...layoutSections(context.pages,assets,context.artwork));}
     }
   }
-  return new Uint8Array(await Packer.toBuffer(new Document({creator:"PDF Master Pro SDK",sections})));
+  return new Uint8Array(await Packer.toBuffer(new Document({creator:"Arquivelio SDK",sections})));
 };
 
 /** Extract Unicode geometry independently from Poppler; choose a compatible renderer. */

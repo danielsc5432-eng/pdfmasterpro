@@ -9,7 +9,7 @@ export async function deliverSupport(text: string, replyTo: string, protocol: st
   const response = await transport("https://api.resend.com/emails", {
     method: "POST", signal: AbortSignal.timeout(15000),
     headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json", "Idempotency-Key": `support/${protocol}` },
-    body: JSON.stringify({ from: process.env.SUPPORT_FROM_EMAIL, to: [supportEmail()], reply_to: replyTo, subject: `[Atendimento ${protocol}] PDF Master Pro`, text }),
+    body: JSON.stringify({ from: process.env.SUPPORT_FROM_EMAIL, to: [supportEmail()], reply_to: replyTo, subject: `[Atendimento ${protocol}] Arquivelio`, text }),
   });
   if (!response.ok) throw new Error("SUPPORT_PROVIDER_FAILED");
   const result = await response.json();

@@ -12,6 +12,44 @@ function requestWith(headers: Record<string, string>) {
   return { headers: new Headers(headers) } as Parameters<typeof getPublicOrigin>[0];
 }
 
+test("origem da migracao pode mudar sem trocar SITE_URL usada pelas sessoes", () => {
+  const oldOrigin = process.env.APP_PUBLIC_ORIGIN;
+  const oldSite = process.env.NEXT_PUBLIC_SITE_URL;
+  process.env.APP_PUBLIC_ORIGIN = "https://www.arquivelio.com.br";
+  process.env.NEXT_PUBLIC_SITE_URL = "https://www.pdfmasterpro.com.br";
+  try {
+    assert.equal(getPublicOrigin(requestWith({})), "https://www.arquivelio.com.br");
+    assert.equal(process.env.NEXT_PUBLIC_SITE_URL, "https://www.pdfmasterpro.com.br");
+  } finally {
+    if (oldOrigin === undefined) delete process.env.APP_PUBLIC_ORIGIN;
+    else process.env.APP_PUBLIC_ORIGIN = oldOrigin;
+    if (oldSite === undefined) delete process.env.NEXT_PUBLIC_SITE_URL;
+    else process.env.NEXT_PUBLIC_SITE_URL = oldSite;
+  }
+});
+
+test("Arquivelio usa www sem alterar identificadores de contas", () => {
+  const previous = process.env.NEXT_PUBLIC_SITE_URL;
+  process.env.NEXT_PUBLIC_SITE_URL = "https://arquivelio.com.br";
+  try {
+    assert.equal(getPublicOrigin(requestWith({})), "https://www.arquivelio.com.br");
+  } finally {
+    if (previous === undefined) delete process.env.NEXT_PUBLIC_SITE_URL;
+    else process.env.NEXT_PUBLIC_SITE_URL = previous;
+  }
+});
+
+test("a normalizacao de Arquivelio nao altera outro dominio", () => {
+  const previous = process.env.NEXT_PUBLIC_SITE_URL;
+  process.env.NEXT_PUBLIC_SITE_URL = "https://arquivelio.com.br.evil.test";
+  try {
+    assert.equal(getPublicOrigin(requestWith({})), "https://arquivelio.com.br.evil.test");
+  } finally {
+    if (previous === undefined) delete process.env.NEXT_PUBLIC_SITE_URL;
+    else process.env.NEXT_PUBLIC_SITE_URL = previous;
+  }
+});
+
 test("normaliza o apex configurado para o domínio canônico www", () => {
   process.env.NEXT_PUBLIC_SITE_URL = "https://pdfmasterpro.com.br";
   try {

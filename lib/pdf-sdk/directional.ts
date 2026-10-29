@@ -28,4 +28,4 @@ export async function directionalSections({pages,assets,artwork}:Parameters<Layo
   return sections;
 }
 
-export const renderDirectional: LayoutReconstructor = async context => new Uint8Array(await Packer.toBuffer(new Document({creator:"PDF Master Pro SDK",sections:await directionalSections(context)})));
+export const renderDirectional: LayoutReconstructor = async context => new Uint8Array(await Packer.toBuffer(new Document({creator:"Arquivelio SDK",sections:await directionalSections(context)})));

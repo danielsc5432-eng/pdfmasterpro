@@ -5,7 +5,7 @@ import { SESSION_COOKIE, readSessionToken } from "@/lib/auth/session";
 import { AccountNavigation } from "@/components/account-navigation";
 import { AccountWorkspace } from "@/components/account-workspace";
 
-export const metadata: Metadata = { title: "Minha conta", description: "Seu espaço de trabalho PDF Master Pro.", robots: { index: false, follow: false } };
+export const metadata: Metadata = { title: "Minha conta", description: "Seu espaço de trabalho Arquivelio.", robots: { index: false, follow: false } };
 export default async function DashboardPage() {
   const user = readSessionToken((await cookies()).get(SESSION_COOKIE)?.value);
   if (!user) return <div className="page-shell"><div className="page-header"><span className="eyebrow">Área da conta</span><h1>Entre para acessar seu painel.</h1><p>Consulte seu perfil, histórico e preferências em um espaço protegido.</p><Link className="button button-primary" href="/entrar">Entrar na minha conta</Link></div></div>;

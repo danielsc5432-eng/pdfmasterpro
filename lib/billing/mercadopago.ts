@@ -46,7 +46,7 @@ export async function createPreapproval(input: { plan: Plan; payerEmail: string;
   return mpRequest<Preapproval>("/preapproval", {
     method: "POST",
     body: JSON.stringify({
-      reason: `PDF Master Pro Premium (${input.plan.interval === "year" ? "anual" : "mensal"})`,
+      reason: `Arquivelio Premium (${input.plan.interval === "year" ? "anual" : "mensal"})`,
       external_reference: input.externalReference,
       payer_email: input.payerEmail,
       back_url: input.backUrl,
@@ -112,7 +112,7 @@ export async function createPreference(input: {
       items: [
         {
           id: input.plan.id,
-          title: `PDF Master Pro Premium (${input.plan.interval === "year" ? "anual" : "mensal"})`,
+          title: `Arquivelio Premium (${input.plan.interval === "year" ? "anual" : "mensal"})`,
           description: `Acesso Premium por ${input.plan.interval === "year" ? "12 meses" : "1 mês"}`,
           quantity: 1,
           currency_id: "BRL",

@@ -1,5 +1,5 @@
 /**
- * Catálogo de planos do PDF Master Pro.
+ * Catálogo de planos do Arquivelio.
  *
  * Modelo espelhado no iLovePDF: plano Grátis (ferramentas essenciais com
  * processamento limitado) e plano Premium cobrado mensal ou anualmente.

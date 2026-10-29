@@ -11,7 +11,7 @@ const keys = ["tool", "description", "environment", "attempted"] as const;
 const limits = [100, 3000, 300, 1000];
 const minimums = [2, 15, 3, 3];
 type Message = { role: "bot" | "user"; text: string };
-const initial: Message[] = [{ role: "bot", text: "Olá! Sou o assistente automático do PDF Master Pro. Vou orientar você e organizar seu pedido para a equipe. Este atendimento usa respostas guiadas, sem atendente ao vivo. Qual é o assunto?" }];
+const initial: Message[] = [{ role: "bot", text: "Olá! Sou o assistente automático do Arquivelio. Vou orientar você e organizar seu pedido para a equipe. Este atendimento usa respostas guiadas, sem atendente ao vivo. Qual é o assunto?" }];
 
 export function SupportChat({ deliveryReady, email }: { deliveryReady: boolean; email: string | null }) {
   const [messages, setMessages] = useState<Message[]>(initial);

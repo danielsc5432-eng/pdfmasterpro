@@ -4,7 +4,7 @@ export function GoogleSignInButton({ mode }: { mode: "signup" | "signin" }) {
   const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
   if (!clientId) return <p role="alert">O acesso com Google ainda não foi configurado.</p>;
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/$/, "") || "https://www.pdfmasterpro.com.br";
+  const siteUrl = (process.env.APP_PUBLIC_ORIGIN || process.env.NEXT_PUBLIC_SITE_URL)?.trim().replace(/\/$/, "") || "https://www.arquivelio.com.br";
 
   return <>
     <Script src="https://accounts.google.com/gsi/client" strategy="afterInteractive" />

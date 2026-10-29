@@ -26,7 +26,7 @@ export async function divergenceReport(result: AnalysisResult, reviews: Record<s
     if (row) draw();
     y -= 4;
   };
-  pdf.setTitle("PDF Master Pro — Relatório de divergências");
+  pdf.setTitle("Arquivelio — Relatório de divergências");
   line("PDF MASTER PRO", 17); line("Relatório de comparação documental", 14);
   line(`Análise: ${result.id}`);
   line(`Gerado: ${new Date(result.createdAt).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}`);
@@ -65,6 +65,6 @@ export async function divergenceReport(result: AnalysisResult, reviews: Record<s
     y -= 10;
   }
   const pages = pdf.getPages();
-  pages.forEach((sheet, index) => sheet.drawText(`PDF Master Pro — ${index + 1}/${pages.length}`, { x: 42, y: 25, font, size: 8 }));
+  pages.forEach((sheet, index) => sheet.drawText(`Arquivelio — ${index + 1}/${pages.length}`, { x: 42, y: 25, font, size: 8 }));
   return pdf.save();
 }

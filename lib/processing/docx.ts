@@ -377,9 +377,9 @@ export async function pdfToDocx(input: Uint8Array, originalName = "documento", o
       const documentPages = originalArtwork ? pages.map(page => ({ ...page, images: [] })) : pages;
       if (reconstruct) return await reconstruct({ pages: documentPages, assets, artwork });
       const documentOptions = {
-        creator: "PDF Master Pro",
+        creator: "Arquivelio",
         title: originalName,
-        description: `Documento recriado a partir de ${originalName} pelo PDF Master Pro.${scannedArtwork.size ? " Contém texto reconhecido por OCR; revise nomes e valores." : ""}`,
+        description: `Documento recriado a partir de ${originalName} pelo Arquivelio.${scannedArtwork.size ? " Contém texto reconhecido por OCR; revise nomes e valores." : ""}`,
         styles: { default: { document: { run: { font: "Arial", size: 22 } } } },
       };
       // Documentos longos são montados em blocos: o gráfico de objetos do DOCX
@@ -405,9 +405,9 @@ export async function pdfToDocx(input: Uint8Array, originalName = "documento", o
     const paragraphs = buildDocxParagraphs(await readFile(textPath, "utf8"));
     if (!paragraphs.some((item) => item.text.trim())) throw new Error("Este PDF não contém texto extraível. OCR será necessário para documentos digitalizados.");
     const fallback = new Document({
-      creator: "PDF Master Pro",
+      creator: "Arquivelio",
       title: originalName,
-      description: `Texto extraído de ${originalName} pelo PDF Master Pro.`,
+      description: `Texto extraído de ${originalName} pelo Arquivelio.`,
       styles: { default: { document: { run: { font: "Calibri", size: 22 }, paragraph: { spacing: { after: 160, line: 276 } } } } },
       sections: textFlowSections(paragraphs),
     });

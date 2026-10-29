@@ -7,7 +7,7 @@ import { CancelSubscriptionButton } from "@/components/manage-subscription";
 
 import { AccountNavigation } from "@/components/account-navigation";
 
-export const metadata = { title: "Configurações", description: "Preferências e assinatura da sua conta PDF Master Pro." };
+export const metadata = { title: "Configurações", description: "Preferências e assinatura da sua conta Arquivelio." };
 
 const statusLabels: Record<string, string> = {
   pending: "Aguardando confirmação do pagamento",

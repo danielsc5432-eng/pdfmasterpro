@@ -31,7 +31,7 @@ export async function renderReconstruction(pages: LayoutPage[], assets: Map<stri
     // Keep each table on its source page after the page's stable anchor.
     (sections[table.page].children as (Paragraph | Table)[]).push(native);
   }
-  return new Uint8Array(await Packer.toBuffer(new Document({creator:"PDF Master Pro SDK", sections})));
+  return new Uint8Array(await Packer.toBuffer(new Document({creator:"Arquivelio SDK", sections})));
 }
 function paragraph(spans: SourceSpan[]) {
   const ordered = [...spans].sort((a,b) => Math.abs(a.y-b.y)>2 ? a.y-b.y : a.x-b.x);

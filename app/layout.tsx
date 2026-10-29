@@ -3,26 +3,27 @@ import { AdsenseScript } from "@/components/adsense-script";
 import { Footer } from "@/components/footer";
 import { Header } from "@/components/header";
 import "./globals.css";
+import { BRAND_SITE_URL } from "@/lib/brand";
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+const siteUrl = BRAND_SITE_URL;
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: "PDF Master Pro — Ferramentas para PDF",
-    template: "%s — PDF Master Pro",
+    default: "Arquivelio — Ferramentas para PDF",
+    template: "%s — Arquivelio",
   },
   description: "Converta, organize, comprima e proteja seus documentos com ferramentas práticas para PDF.",
   keywords: ["PDF", "juntar PDF", "dividir PDF", "imagens para PDF", "organizar PDF"],
   openGraph: {
     type: "website",
     url: siteUrl,
-    siteName: "PDF Master Pro",
-    title: "PDF Master Pro — Ferramentas para PDF",
+    siteName: "Arquivelio",
+    title: "Arquivelio — Ferramentas para PDF",
     description: "Todas as ferramentas para seus documentos em um só lugar.",
-    images: [{ url: "/brand/pdfmasterpro-full.png", width: 1536, height: 1024, alt: "PDF Master Pro" }],
+    images: [{ url: "/brand/arquivelio-horizontal.jpeg", width: 1599, height: 578, alt: "Arquivelio" }],
   },
-  twitter: { card: "summary_large_image", images: ["/brand/pdfmasterpro-full.png"] },
+  twitter: { card: "summary_large_image", images: ["/brand/arquivelio-horizontal.jpeg"] },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

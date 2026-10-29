@@ -31,11 +31,11 @@ export async function legalReportPdf(result:LegalResult,fontBytes:Uint8Array) {
 export async function textReportPdf(text:string,fontBytes:Uint8Array,title:string) {
   const pdf=await PDFDocument.create();pdf.registerFontkit(fontkit);const font=await pdf.embedFont(fontBytes,{subset:true});const supported=new Set(font.getCharacterSet());
   if([...text].some(char=>!/[\n\r\t]/.test(char)&&!supported.has(char.codePointAt(0)!)))throw Error("Há caracteres não suportados no PDF. Use DOCX ou TXT para preservar todo o conteúdo.");
-  pdf.setTitle(title);pdf.setAuthor("PDF Master Pro");
+  pdf.setTitle(title);pdf.setAuthor("Arquivelio");
   let page=pdf.addPage([595,842]),y=795;
   const draw=(row:string,size:number)=>{if(y<48){page=pdf.addPage([595,842]);y=795;}page.drawText(row,{x:40,y,font,size,color:size>9?rgb(.22,.2,.48):rgb(.12,.14,.18)});y-=size>9?size+8:14;};
   const lines=text.replace(/\r/g,"").replace(/\t/g,"    ").split("\n");
   for(const [index,line]of lines.entries()){const size=index===0?14:/^(VERSÃO |DOCUMENTOS |RESUMO POR |LIMITAÇÕES$|ANTES$|DEPOIS$)/.test(line)?10:9;let row="";for(const char of line){if(font.widthOfTextAtSize(row+char,size)>515){draw(row,size);row="";}row+=char;}draw(row,size);}
-  const pages=pdf.getPages();pages.forEach((page,index)=>page.drawText(`PDF Master Pro | Página ${index+1} de ${pages.length}`,{x:40,y:22,font,size:7,color:rgb(.4,.4,.45)}));
+  const pages=pdf.getPages();pages.forEach((page,index)=>page.drawText(`Arquivelio | Página ${index+1} de ${pages.length}`,{x:40,y:22,font,size:7,color:rgb(.4,.4,.45)}));
   return pdf.save();
 }

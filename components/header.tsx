@@ -59,9 +59,9 @@ export function Header() {
   return (
     <header className="site-header">
       <div className="header-inner">
-        <Link className="brand" href="/" aria-label="PDF Master Pro, início">
+        <Link className="brand" href="/" aria-label="Arquivelio, início">
           <BrandSymbol />
-          <span className="brand-name">PDF Master Pro</span>
+          <span className="brand-name">Arquivelio</span>
         </Link>
         <nav className="desktop-nav" aria-label="Navegação principal">
           {links.map((link) => <Link key={link.href} className={`nav-link ${pathname === link.href ? "active" : ""}`} href={link.href}>{link.label}</Link>)}

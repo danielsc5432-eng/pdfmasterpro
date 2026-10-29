@@ -9,10 +9,10 @@
   --muted: #667085;
   --muted-strong: #475467;
   --border: #e5e7eb;
-  --primary: #e5484d;
-  --primary-dark: #c9363c;
-  --secondary: #5b5bd6;
-  --secondary-soft: #eeedff;
+  --primary: #1746a2;
+  --primary-dark: #103578;
+  --secondary: #087e83;
+  --secondary-soft: #e7f6f5;
   --accent: #16a34a;
   --shadow: 0 14px 40px rgba(32, 36, 49, 0.08);
   --shadow-sm: 0 4px 14px rgba(32, 36, 49, 0.06);
@@ -52,10 +52,15 @@ button { cursor: pointer; }
 .footer .brand-mark { width: 34px; height: 29px; }
 :root.dark .brand-mark { filter: brightness(1.18) saturate(1.05); }
 .brand-name { font-size: 16px; }
-.brand-symbol { position: relative; display: block; width: 54px; height: 40px; flex: 0 0 54px; overflow: hidden; border-radius: 8px; background: #fff; }
-.brand-symbol .brand-symbol-image { position: absolute; width: 86px; height: auto; max-width: none; left: -18px; top: 0; }
+.brand-symbol { position: relative; display: block; width: 48px; height: 46px; flex: 0 0 48px; overflow: hidden; border-radius: 8px; background: #fff; }
+.brand-symbol .brand-symbol-image { position: absolute; width: 192px; height: auto; max-width: none; left: -7px; top: -8px; }
 .footer .footer-logo { display: block; width: min(100%, 270px); margin: 0 0 16px; padding: 8px; border: 1px solid #e5e7eb; border-radius: 14px; background: #fff; }
 .footer-logo img { display: block; width: 100%; height: auto; }
+.brand-art-dark { display: none; position: relative; width: 100%; aspect-ratio: 950 / 290; overflow: hidden; border-radius: 8px; }
+.footer-logo .brand-art-dark img { position: absolute; width: 161.685%; max-width: none; left: -5.263%; top: -34.483%; }
+:root.dark .footer-logo .brand-art-light { display: none; }
+:root.dark .brand-art-dark { display: block; }
+:root.dark .footer .footer-logo { background: #041329; border-color: #17365a; }
 .desktop-nav { display: flex; align-items: center; gap: 18px; margin-left: auto; }
 .nav-link { color: var(--muted-strong); font-size: 14px; font-weight: 600; transition: color .18s ease; }
 .nav-link:hover, .nav-link.active { color: var(--primary); }
