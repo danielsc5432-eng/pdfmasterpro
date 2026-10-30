@@ -3,7 +3,7 @@ import Link from "next/link";
 import { GoogleSignInButton } from "@/components/google-sign-in-button";
 import { LocalAuthForm } from "@/components/local-auth-form";
 import { LockKeyhole, ShieldCheck } from "lucide-react";
-export const metadata: Metadata = { title: "Entrar", description: "Acesse sua conta Arquivelio." };
+export const metadata: Metadata = { title: "Entrar", description: "Acesse sua conta Arquivelio.", robots: { index: false, follow: false } };
 const authErrors: Record<string, string> = {
 	account_identity_exists: "Já existe uma conta para esse endereço ou uma variação equivalente. Use a forma de acesso original ou fale com o suporte.",
 	registration_limited: "Limite de novos cadastros deste navegador ou conexão atingido. Use uma conta existente ou fale com o suporte.",

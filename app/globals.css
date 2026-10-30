@@ -1,6 +1,16 @@
 @import "tailwindcss";
 @import "./account.css";
 
+.skip-link{position:fixed;top:8px;left:8px;transform:translateY(-160%);z-index:200;background:var(--surface);color:var(--text);padding:12px 16px;border:2px solid var(--primary);border-radius:8px}
+.skip-link:focus{transform:translateY(0)}
+.tool-guide{max-width:1100px;overflow-wrap:anywhere}
+.tool-guide h2{margin:28px 0 12px;font-size:1.3rem}
+.tool-guide ol,.tool-guide ul{padding-left:24px;list-style:revert}
+.tool-guide li{margin:8px 0}
+.tool-guide details{padding:14px 0;border-bottom:1px solid var(--border)}
+.tool-guide summary{cursor:pointer;font-weight:600}
+.tool-guide a{color:var(--primary);text-decoration:underline}
+
 :root {
   --bg: #f8fafc;
   --surface: #ffffff;
@@ -99,7 +109,7 @@ button { cursor: pointer; }
 .upload-card { position: relative; z-index: 1; width: min(100%, 420px); padding: 25px; border: 1px solid var(--border); border-radius: 22px; background: var(--surface); box-shadow: var(--shadow); }
 .upload-card-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
 .upload-card-title { font-weight: 800; }
-.upload-card-badge { color: var(--accent); background: color-mix(in srgb, var(--accent) 11%, var(--surface)); padding: 5px 8px; border-radius: 8px; font-size: 11px; font-weight: 800; }
+.upload-card-badge { color: #137333; background: color-mix(in srgb, var(--accent) 11%, var(--surface)); padding: 5px 8px; border-radius: 8px; font-size: 11px; font-weight: 800; }
 .dropzone { border: 1.5px dashed color-mix(in srgb, var(--primary) 46%, var(--border)); border-radius: 16px; padding: 32px 20px; text-align: center; background: color-mix(in srgb, var(--primary) 4%, var(--surface)); transition: border-color .18s ease, background .18s ease, transform .18s ease; }
 .dropzone.dragging, .dropzone:hover { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 8%, var(--surface)); transform: translateY(-2px); }
 .dropzone-icon { display: grid; place-items: center; width: 52px; height: 52px; margin: 0 auto 13px; border-radius: 15px; color: var(--primary); background: color-mix(in srgb, var(--primary) 12%, var(--surface)); }
@@ -121,7 +131,7 @@ button { cursor: pointer; }
 .tool-card-formats { color: var(--muted); font-size: 11px; font-weight: 700; }
 .tool-card-premium { margin-left: auto; padding: 5px 8px; border-radius: 99px; font-size: 10px; font-weight: 800; color: var(--secondary); background: var(--secondary-soft); }
 .tool-status { display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px; border-radius: 99px; font-size: 10px; font-weight: 800; }
-.status-ready { color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
+.status-ready { color: #137333; background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
 .status-needs-config { color: #a15c00; background: #fff4df; }
 .status-coming-soon { color: var(--muted-strong); background: var(--surface-soft); }
 .category-row { max-width: 1180px; margin: 0 auto 24px; display: flex; gap: 8px; flex-wrap: wrap; }
@@ -281,3 +291,5 @@ details p { color: var(--muted); line-height: 1.65; font-size: 13px; margin: 12p
 .auth-note svg { color: var(--accent); flex: 0 0 auto; margin-top: 1px; }
 .auth-switch { font-size: 13px !important; }
 .auth-switch a { color: var(--secondary); font-weight: 800; }
+
+:root.dark .status-ready,:root.dark .upload-card-badge{color:#75dda0}

@@ -1,9 +1,10 @@
+import { publicMetadata } from "@/lib/seo";
 import { Search } from "lucide-react";
 import Link from "next/link";
 import { ToolCard } from "@/components/tool-card";
 import { categories, tools } from "@/lib/tools/catalog";
 
-export const metadata = { title: "Ferramentas para PDF", description: "Explore o catálogo de ferramentas do Arquivelio." };
+export const metadata = publicMetadata("/ferramentas");
 
 type SearchParams = Promise<{ busca?: string | string[]; categoria?: string | string[] }>;
 

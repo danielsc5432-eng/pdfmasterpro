@@ -36,7 +36,7 @@
 .comparison-preview figcaption { color: var(--muted); font-size: 10px; line-height: 1.6; margin-top: 12px; }
 .flagship-how { padding-top: 42px; background: var(--surface); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); scroll-margin-top: 100px; }
 .flagship-step { background: var(--bg); }
-.flagship-step-number { display: grid; place-items: center; width: 33px; height: 33px; background: var(--secondary-soft); color: var(--secondary); border-radius: 10px; font-size: 12px; font-weight: 800; }
+.flagship-step-number { display: grid; place-items: center; width: 33px; height: 33px; background: var(--secondary-soft); color: #07676b; border-radius: 10px; font-size: 12px; font-weight: 800; }
 .flagship-how-note { max-width: 1180px; margin: 20px auto 0; color: var(--muted); font-size: 12px; line-height: 1.7; }
 .flagship-how .text-link { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .home-utilities { max-width: 1180px; margin: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 50px; align-items: center; }

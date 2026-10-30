@@ -8,7 +8,7 @@ import { SESSION_COOKIE, readSessionToken } from "@/lib/auth/session";
 import { getTool } from "@/lib/tools/catalog";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Histórico", description: "Histórico de tarefas Arquivelio." };
+export const metadata = { title: "Histórico", description: "Histórico de tarefas Arquivelio.", robots: { index: false, follow: false } };
 
 function formatBytes(value: number | null) { if (value === null) return "—"; if (value < 1024 * 1024) return `${(value / 1024).toFixed(0)} KB`; return `${(value / (1024 * 1024)).toFixed(1)} MB`; }
 function formatDate(value: Date) { return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short", timeZone: "America/Sao_Paulo" }).format(value); }

@@ -1,3 +1,4 @@
+import { publicMetadata } from "@/lib/seo";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { ArrowRight, Sparkles } from "lucide-react";
@@ -7,15 +8,7 @@ import { tools } from "@/lib/tools/catalog";
 import { DivergencePromo, DivergenceSteps } from "@/components/divergence-promo";
 import "./home.css";
 
-export const metadata: Metadata = {
-  title: { absolute: "Compare PDFs e encontre divergências — Arquivelio" },
-  description: "Compare contratos e notas fiscais em PDF com o Detector de Divergências. Confira diferenças em valores e datas, revise as evidências e baixe um relatório.",
-  openGraph: {
-    title: "Compare PDFs. Encontre diferenças. Confira com evidências.",
-    description: "Compare contratos e notas fiscais em PDF com evidências por página e revisão humana no Detector de Divergências do Arquivelio.",
-    images: [{ url: "/brand/arquivelio-horizontal.jpeg", width: 1599, height: 578, alt: "Arquivelio — Detector de Divergências" }],
-  },
-};
+export const metadata = publicMetadata("/");
 
 export default function HomePage() {
   const popular = tools.filter((tool) => tool.popular);

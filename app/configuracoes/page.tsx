@@ -7,7 +7,7 @@ import { CancelSubscriptionButton } from "@/components/manage-subscription";
 
 import { AccountNavigation } from "@/components/account-navigation";
 
-export const metadata = { title: "Configurações", description: "Preferências e assinatura da sua conta Arquivelio." };
+export const metadata = { title: "Configurações", description: "Preferências e assinatura da sua conta Arquivelio.", robots: { index: false, follow: false } };
 
 const statusLabels: Record<string, string> = {
   pending: "Aguardando confirmação do pagamento",

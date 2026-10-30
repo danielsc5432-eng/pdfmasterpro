@@ -8,7 +8,7 @@ const statusLabel = { ready: "Disponível", "needs-config": "Requer configuraç�
 export function ToolCard({ tool }: { tool: ToolDefinition }) {
   const StatusIcon = tool.status === "ready" ? CheckCircle2 : tool.status === "needs-config" ? Settings2 : Clock3;
   return (
-    <Link className="tool-card" href={`/ferramentas/${tool.slug}`} aria-label={`Abrir ${tool.name}`}>
+    <Link className="tool-card" href={`/ferramentas/${tool.slug}`}>
       <div className="tool-card-icon"><ToolIcon name={tool.icon} /></div>
       <h3>{tool.name}</h3>
       <p>{tool.description}</p>

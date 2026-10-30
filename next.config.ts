@@ -1,11 +1,13 @@
 import type { NextConfig } from "next";
 import { PHASE_DEVELOPMENT_SERVER, PHASE_PRODUCTION_BUILD } from "next/constants";
 import { execFileSync } from "node:child_process";
+import { seoRedirects } from "./lib/seo-redirects";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   serverExternalPackages: ["pdf-lib", "jszip"],
+  redirects: async () => seoRedirects(),
   async headers() {
     return [
       {

@@ -5,7 +5,7 @@ import { SESSION_COOKIE, readSessionToken } from "@/lib/auth/session";
 import { getActiveSubscription, getLatestSubscription } from "@/lib/db/subscriptions";
 import { formatBRL, getPlan } from "@/lib/plans";
 
-export const metadata = { title: "Assinatura Premium", description: "Confirmação da sua assinatura do Arquivelio." };
+export const metadata = { title: "Assinatura Premium", description: "Confirmação da sua assinatura do Arquivelio.", robots: { index: false, follow: false } };
 
 function formatDate(value: Date | null) {
   return value ? value.toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" }) : null;
