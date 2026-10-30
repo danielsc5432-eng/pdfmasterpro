@@ -2,7 +2,13 @@
 
 ## Estado da entrega
 
-Alterações locais preparadas e testadas. **Não publicadas**, sem push, sem alterações de DNS, Vercel, autenticação ou pagamentos. A versão pública continua usando `https://www.arquivelio.com.br`. O endereço desejado neste pedido é `https://arquivelio.com.br`; publicar os novos canonicals exige coordenar o redirecionamento na Vercel. Não aplicar um redirect de www para raiz enquanto a raiz ainda redireciona para www: isso criaria um loop.
+**Atualização após autorização do proprietário:** melhorias publicadas no commit `b2c538d`, deploy `dpl_HRJiMQVSGLepDTHCjmcH9Chdsd82`. As 34 páginas públicas foram conferidas em produção: HTTP 200, canonical e JSON-LD presentes. Os dois domínios antigos redirecionam as páginas com 308, preservando caminho e query. A API de webhook continua sem redirect (GET 405, método não permitido, como esperado). O redirect global do domínio antigo sem www foi removido para evitar salto extra; a regra da aplicação exclui APIs e assets do Next. DNS e identificação de sessões não foram alterados.
+
+**Domínio canônico de produção nesta etapa: `https://www.arquivelio.com.br`.** Mantido para preservar o login Google já configurado. O proprietário informou que não sabe se cadastrou os callbacks sem www. A troca para `https://arquivelio.com.br` depende dessa confirmação no Google Cloud, seguida de atualização coordenada de origem, normalização em `lib/auth/session.ts`, variável SEO e redirect da raiz na Vercel. `SEO_SITE_ORIGIN=https://www.arquivelio.com.br` e `SEO_CANONICAL_REDIRECTS=1` documentam o estado atual. Não ativar a versão sem www sem remover primeiro o redirect raiz → www, pois haveria loop.
+
+Regressão da publicação: **289 testes passaram** e TypeScript passou. `/entrar` responde 200 e mantém o callback Google anterior. Não foi feito login interativo pelo titular. As seções seguintes registram a auditoria original e o plano; a execução atualizada acima prevalece sobre o planejamento.
+
+Lighthouse repetido em produção após publicar: móvel desempenho **89**, acessibilidade **100**, SEO **100**, LCP 1.178 ms e CLS 0; desktop desempenho **100**, acessibilidade **100**, SEO **100**, LCP 335 ms e CLS 0,00258. A nota móvel de desempenho permaneceu 89 nesta execução; não há aumento comprovado dessa pontuação. Relatórios `lighthouse-published-mobile.json` e `lighthouse-published-desktop.json`. Chrome em produção confirmou marca e imagens em 390/1440 px, claro/escuro e sem overflow. Search Console continua sem acesso; sitemap não foi submetido por esta sessão.
 
 ## Evidência e escopo
 

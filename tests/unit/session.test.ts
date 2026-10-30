@@ -3,9 +3,8 @@ import assert from "node:assert/strict";
 import { getPublicOrigin } from "../../lib/auth/session";
 
 /**
- * O apex responde 308 para o www, e tanto o Mercado Pago (webhook) quanto o
- * Google (callback OAuth) recusam redirecionamento: o webhook exige 200/201 e o
- * redirect_uri precisa bater exatamente. Por isso a origem pública é sempre o www.
+ * Preserve legacy webhook origins while the configured current origin can
+ * use the apex. Session identifiers remain independent of public branding.
  */
 
 function requestWith(headers: Record<string, string>) {
@@ -28,11 +27,11 @@ test("origem da migracao pode mudar sem trocar SITE_URL usada pelas sessoes", ()
   }
 });
 
-test("Arquivelio usa www sem alterar identificadores de contas", () => {
+test("Arquivelio aceita origem sem www sem alterar identificadores de contas", () => {
   const previous = process.env.NEXT_PUBLIC_SITE_URL;
   process.env.NEXT_PUBLIC_SITE_URL = "https://arquivelio.com.br";
   try {
-    assert.equal(getPublicOrigin(requestWith({})), "https://www.arquivelio.com.br");
+    assert.equal(getPublicOrigin(requestWith({})), "https://arquivelio.com.br");
   } finally {
     if (previous === undefined) delete process.env.NEXT_PUBLIC_SITE_URL;
     else process.env.NEXT_PUBLIC_SITE_URL = previous;
