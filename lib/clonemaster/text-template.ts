@@ -63,7 +63,26 @@ export function readTextTemplate(id: string, name: string, input: Uint8Array, re
     position += lineWithBreak.length;
     lineNumber++;
   }
-  if (!fields.length) throw Error("Não foram encontrados campos editáveis. Use chave=valor; em TXT também aceitamos Nome: valor ou chave e valor separados por tabulação. Texto livre e tabelas exigem um modelo estruturado.");
+  if (!fields.length && extension === "txt") {
+    // Recognize only an unambiguous whole table: code, name, integer value.
+    // Keep two separator spaces and reserve the remaining numeric column.
+    const rows = [...text.matchAll(/([^\r\n]+)(?:\r\n|\r|\n|$)/g)].filter(row => row[1].trim());
+    const parsed = rows.map(row => ({ row, match: row[1].match(/^(\d+)( {2,})(\p{L}[\p{L}\p{M} .'-]*?)( {2,})(\d+)( *)$/u) }));
+    const ends = parsed.map(({ match: m }) => m ? m[1].length + m[2].length + m[3].length + m[4].length + m[5].length : -1);
+    if (rows.length >= 2 && parsed.every(item => item.match) && new Set(rows.map(row => row[1].length)).size === 1 && new Set(ends).size === 1) {
+      for (const { row, match } of parsed) {
+        const m = match!;
+        const startCharacter = m[1].length + m[2].length + m[3].length + 2;
+        const endCharacter = ends[0];
+        const start = bomLength + encodeText(text.slice(0, row.index! + startCharacter), encoding).length;
+        const end = bomLength + encodeText(text.slice(0, row.index! + endCharacter), encoding).length;
+        const key = m[1], occurrence = (occurrences.get(key) ?? 0) + 1; occurrences.set(key, occurrence);
+        fields.push({ id: `field-${fields.length}`, section: "Valores por código", key, occurrence, line: text.slice(0, row.index).split(/\r\n|\r|\n/).length, start, end, value: m[5], fixedWidth: endCharacter - startCharacter });
+        if (fields.length > LIMITS.fields) throw Error("O modelo excede 200 campos editáveis.");
+      }
+    }
+  }
+  if (!fields.length) throw Error("Não foram encontrados campos editáveis. Use chave=valor; em TXT também aceitamos Nome: valor, tabulação ou tabelas alinhadas com código, nome e valor inteiro.");
   return { id, name, extension, bytes: input.slice(), text, encoding, bomLength, fields };
 }
 
@@ -75,7 +94,13 @@ export function renderTextTemplate(template: Template, replacements: { field: st
     used.add(field.id);
     if (replacement.value.length > 32767 || /[\r\n\x00-\x1f\x7f]/.test(replacement.value)) throw Error("Valor com quebra de linha, controle ou tamanho incompatível com uma chave de configuração.");
     if (/(?:^|[ \t])[;#]/.test(replacement.value)) throw Error("O valor contém um delimitador de comentário que exige revisão do formato do modelo.");
-    return { ...field, bytes: encodeText(replacement.value, template.encoding), value: replacement.value };
+    let value = replacement.value;
+    if (field.fixedWidth !== undefined) {
+      if (!/^\d+$/.test(value)) throw Error("A coluna fixa exige um valor inteiro sem separadores. Confirme a unidade na planilha; não fazemos conversão automática de moeda.");
+      if (value.length > field.fixedWidth) throw Error("O valor excede a largura da coluna do modelo. Nenhum dado foi truncado.");
+      value = value.padStart(field.fixedWidth, " ");
+    }
+    return { ...field, bytes: encodeText(value, template.encoding), value: replacement.value };
   }).sort((a, b) => a.start - b.start);
   if (!edits.length) throw Error("Selecione ao menos um campo para substituir.");
   let length = template.bytes.length, cursor = 0;

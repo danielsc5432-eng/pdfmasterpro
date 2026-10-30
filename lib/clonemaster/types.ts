@@ -1,6 +1,6 @@
 export const LIMITS = { templateBytes: 256 * 1024, sourceBytes: 8 * 1024 * 1024, totalInputBytes: 20 * 1024 * 1024, filesPerArea: 5, zipEntries: 200, inflatedBytes: 24 * 1024 * 1024, xmlBytes: 8 * 1024 * 1024, cells: 100000, rows: 5000, columns: 200, fields: 200, outputs: 500, outputBytes: 32 * 1024 * 1024, instruction: 2000 } as const;
 export type Encoding = "utf-8" | "utf-16le" | "utf-16be" | "windows-1252";
-export type TemplateField = { id: string; section: string; key: string; occurrence: number; line: number; start: number; end: number; value: string };
+export type TemplateField = { id: string; section: string; key: string; occurrence: number; line: number; start: number; end: number; value: string; fixedWidth?: number };
 export type Template = { id: string; name: string; extension: string; bytes: Uint8Array; text: string; encoding: Encoding; bomLength: number; fields: TemplateField[] };
 export type Cell = { raw: string; displayed: string | null; kind: "text" | "number" | "date" | "boolean" | "error"; formula: boolean; warning?: string };
 export type SourceRow = { number: number; cells: Record<string, Cell> };
